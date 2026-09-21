@@ -1,0 +1,19 @@
+{
+  "name": "campus-crm-server",
+  "version": "0.1.0",
+  "private" : true,
+  "type": "module",
+  "scripts": {
+    "start": "node --watch src/index.js",
+    "seed": "node src/seed-demo.js",
+    "prod": "node src/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^2.0.2",
+    "xlsx": "^0.18.5"
+  }
+}
