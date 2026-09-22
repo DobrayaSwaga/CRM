@@ -40,10 +40,15 @@ export function scoreToTemperature(score) {
  */
 export function recalcScore(contactId) {
   refreshSearchText(contactId); // держим поисковый индекс актуальным
-  const rules = db.prepare('SELECT * FROM scoring_rules WHERE active = 1').all();
-  const contact = db.prepare('SELECT id, status_id, created_at FROM contacts WHERE id = ?').get(contactId);
+  const contact = db.prepare('SELECT id, status_id, created_at, birth_date, contact_role FROM contacts WHERE id = ?').get(contactId);
   if (!contact) return;
+  // Родителям скоринг не начисляем — решение фиксируем на детях
+  if (resolveRole(contact).role === 'parent') {
+    db.prepare("UPDATE contacts SET score = 0, temperature = 'cold', updated_at = datetime('now') WHERE id = ?").run(contactId);
+    return { score: 0, temperature: 'cold' };
+  }
   let score = 0;
+  const rules = db.prepare('SELECT * FROM scoring_rules WHERE active = 1').all();
   for (const rule of rules) {
     let cond = {};
     try { cond = JSON.parse(rule.condition || '{}'); } catch { /* ignore */ }
@@ -80,6 +85,45 @@ export function recalcScore(contactId) {
 
 export function contactFio(c) {
   return [c.last_name, c.first_name, c.middle_name].filter(Boolean).join(' ').trim();
+}
+
+// Возраст из даты рождения («yyyy-mm-dd» или «dd.mm.yyyy»); null, если не распарсить
+export function ageFrom(birth, ref = new Date()) {
+  if (!birth) return null;
+  const s = String(birth).trim();
+  let y, m, d;
+  let mt = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (mt) { y = +mt[1]; m = +mt[2]; d = +mt[3]; }
+  else {
+    mt = s.match(/^(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+    if (!mt) return null;
+    d = +mt[1]; m = +mt[2]; y = +mt[3];
+  }
+  let age = ref.getFullYear() - y;
+  const md = ref.getMonth() + 1 - m;
+  if (md < 0 || (md === 0 && ref.getDate() < d)) age--;
+  return age;
+}
+
+/**
+ * Роль контакта. Рамка (логика приёмной комиссии):
+ *  младше 18      — школьник (потенциальный абитуриент);
+ *  18–31          — взрослый (может быть и старшим абитуриентом, и молодым родителем — не гадаем);
+ *  32 и старше    — родитель: ребёнку 14+ лет ⇒ родителю при его рождении было минимум 18.
+ *  Младше 5 и старше 90 — дата рождения, скорее всего, ошибочна.
+ * Поле contacts.contact_role позволяет переопределить вручную ('' = авто).
+ */
+export function resolveRole(contact) {
+  const manual = String(contact.contact_role || '');
+  const age = ageFrom(contact.birth_date);
+  if (manual === 'child' || manual === 'adult' || manual === 'parent') {
+    return { role: manual, age, suspicious: false, manual: true };
+  }
+  if (age === null) return { role: 'unknown', age: null, suspicious: false, manual: false };
+  if (age < 5 || age > 90) return { role: 'unknown', age, suspicious: true, manual: false };
+  if (age < 18) return { role: 'child', age, suspicious: false, manual: false };
+  if (age >= 32) return { role: 'parent', age, suspicious: false, manual: false };
+  return { role: 'adult', age, suspicious: false, manual: false };
 }
 
 // «18.09.2026» | «2026-09-18» | Date → «2026-09-18» (или '' если не распарсилось)

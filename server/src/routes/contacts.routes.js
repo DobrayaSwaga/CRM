@@ -10,7 +10,7 @@ export const contactsRouter = Router();
 
 const TOUCHPOINT_TYPES = ['dod', 'dod_registration', 'call', 'email', 'application', 'document', 'note', 'other'];
 
-const EDITABLE_FIELDS = ['last_name', 'first_name', 'middle_name', 'phone', 'email', 'birth_date', 'city', 'school', 'grade', 'source', 'ege_score', 'status_id', 'owner_id'];
+const EDITABLE_FIELDS = ['last_name', 'first_name', 'middle_name', 'phone', 'email', 'birth_date', 'city', 'school', 'grade', 'source', 'ege_score', 'status_id', 'owner_id', 'contact_role'];
 
 function applyCustomValues(contactId, custom) {
   if (!custom || typeof custom !== 'object') return;
@@ -52,6 +52,18 @@ contactsRouter.get('/', requirePerm('contacts.view'), (req, res) => {
     params.push(Number(q.program_id));
   }
   if (q.min_score) { where.push('c.score >= ?'); params.push(Number(q.min_score)); }
+  // Фильтр по роли: школьник (<18) / взрослый (18–31) / родитель (32+) / unknown — с учётом ручного переопределения
+  if (['child', 'adult', 'parent', 'unknown'].includes(String(q.role))) {
+    const ageSql = "(CAST(strftime('%Y','now','localtime') AS INTEGER) - CAST(substr(c.birth_date,1,4) AS INTEGER) - (strftime('%m-%d','now','localtime') < substr(c.birth_date,6,5)))";
+    where.push(`(
+      (c.contact_role != '' AND c.contact_role = ?)
+      OR (c.contact_role = '' AND c.birth_date GLOB '[0-9][0-9][0-9][0-9]-*' AND ${ageSql} >= 5 AND ${ageSql} <= 90 AND
+        ((? = 'child' AND ${ageSql} < 18) OR (? = 'parent' AND ${ageSql} >= 32) OR (? = 'adult' AND ${ageSql} >= 18 AND ${ageSql} < 32)))
+      OR (? = 'unknown' AND c.contact_role = '' AND (
+        c.birth_date NOT GLOB '[0-9][0-9][0-9][0-9]-*' OR ${ageSql} < 5 OR ${ageSql} > 90))
+    )`);
+    params.push(q.role, q.role, q.role, q.role, q.role);
+  }
 
   const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const page = Math.max(1, Number(q.page) || 1);
@@ -313,6 +325,9 @@ contactsRouter.patch('/:id', requirePerm('contacts.edit'), (req, res) => {
         db.prepare('UPDATE contacts SET phone = ?, phone_normalized = ? WHERE id = ?').run(String(b.phone || '').trim(), norm, id);
       } else if (f === 'ege_score') {
         db.prepare('UPDATE contacts SET ege_score = ? WHERE id = ?').run(b[f] ? Number(b[f]) : null, id);
+      } else if (f === 'contact_role') {
+        const v = ['child', 'adult', 'parent'].includes(b.contact_role) ? b.contact_role : '';
+        db.prepare('UPDATE contacts SET contact_role = ? WHERE id = ?').run(v, id);
       } else {
         db.prepare(`UPDATE contacts SET ${f} = ? WHERE id = ?`).run(typeof b[f] === 'string' ? b[f].trim() : b[f], id);
       }

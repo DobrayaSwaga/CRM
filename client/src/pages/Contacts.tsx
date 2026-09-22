@@ -5,6 +5,7 @@ import { api, copyText } from '../api';
 import { useAuth } from '../auth';
 import { Card, Button, Input, Select, Badge, Spinner, TempBadge, EmptyState, Modal, Field, Textarea } from '../components/ui';
 import { PageHeader } from '../components/Layout';
+import { resolveRole, ROLE_META } from '../role';
 
 function Checkbox({ checked, onChange }: { checked: boolean; onChange: (on: boolean) => void }) {
   return (
@@ -171,6 +172,7 @@ export default function Contacts() {
     search: searchParams.get('search') || '',
     status_id: searchParams.get('status_id') || '',
     temperature: searchParams.get('temperature') || '',
+    role: searchParams.get('role') || '',
     program_id: searchParams.get('program_id') || '',
     owner_id: searchParams.get('owner_id') || '',
     sort: searchParams.get('sort') || 'created',
@@ -249,6 +251,13 @@ export default function Contacts() {
               <option value="hot">Горячие</option>
               <option value="warm">Тёплые</option>
               <option value="cold">Холодные</option>
+            </Select>
+            <Select value={filters.role} onChange={e => setFilter('role', e.target.value)}>
+              <option value="">Все роли</option>
+              <option value="child">Школьники</option>
+              <option value="adult">Взрослые (18–31)</option>
+              <option value="parent">Родители</option>
+              <option value="unknown">Без даты рождения</option>
             </Select>
             <Select value={filters.program_id} onChange={e => setFilter('program_id', e.target.value)}>
               <option value="">Все направления</option>
@@ -383,8 +392,15 @@ export default function Contacts() {
                           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-white/8 to-white/4 border border-white/10 flex items-center justify-center text-[11px] font-bold text-slate-300 shrink-0 group-hover:border-indigo-400/40 transition-colors">
                             {(c.first_name?.[0] || '?')}{c.last_name?.[0] || ''}
                           </div>
-                          <span className="font-medium text-slate-200 group-hover:text-indigo-300 transition-colors whitespace-nowrap">
-                            {[c.last_name, c.first_name, c.middle_name].filter(Boolean).join(' ')}
+                          <span className="min-w-0">
+                            <span className="block font-medium text-slate-200 group-hover:text-indigo-300 transition-colors whitespace-nowrap">
+                              {[c.last_name, c.first_name, c.middle_name].filter(Boolean).join(' ')}
+                            </span>
+                            {(() => { const ri = resolveRole(c); return ri.role !== 'unknown' && (
+                              <span className="text-[10px] font-medium" style={{ color: ROLE_META[ri.role].color }} title={ri.age !== null ? `Возраст: ${ri.age}${ri.manual ? ' (вручную)' : ''}` : undefined}>
+                                {ROLE_META[ri.role].label}{ri.age !== null ? `, ${ri.age}` : ''}
+                              </span>
+                            ); })()}
                           </span>
                         </Link>
                       </td>

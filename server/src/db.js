@@ -288,6 +288,10 @@ if (!cols.includes('search_text')) {
 if (!cols.includes('grade')) {
   db.exec("ALTER TABLE contacts ADD COLUMN grade TEXT NOT NULL DEFAULT '';");
 }
+// Ручное переопределение роли ('' = авто по дате рождения; child | adult | parent)
+if (!cols.includes('contact_role')) {
+  db.exec("ALTER TABLE contacts ADD COLUMN contact_role TEXT NOT NULL DEFAULT '';");
+}
 
 // Быстрый регистронезависимый поиск, включая кириллицу (LIKE в SQLite — только ASCII)
 export function refreshSearchText(contactId) {

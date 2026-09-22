@@ -3,13 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, MapPin, School, Calendar, Pencil, Trash2,
   Plus, Flame, AlertTriangle, CheckSquare, GraduationCap, Sparkles,
-  Award, Archive, Snowflake, Clock, Paperclip, FileText, Download, X
+  Award, Archive, Snowflake, Clock, Paperclip, FileText, Download, X, Users
 } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { Card, Button, Badge, Spinner, TempBadge, Modal, Field, Input, Select, Textarea, EmptyState } from '../components/ui';
 import { ContactForm } from './Contacts';
 import { TOUCHPOINT_TYPES } from '../constants';
+import { resolveRole, ROLE_META } from '../role';
 
 function scoreColor(score: number) {
   if (score >= 80) return '#f87171';
@@ -86,6 +87,13 @@ function NextActionCard({ contactId, onTaskCreated }: { contactId: number; onTas
       </div>
     </div>
   );
+}
+
+function ageWord(n: number) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'год';
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'года';
+  return 'лет';
 }
 
 function formatSize(bytes: number) {
@@ -304,6 +312,9 @@ export default function ContactDetail() {
                   }}
                 />
               </div>
+              {resolveRole(contact).role === 'parent' && (
+                <div className="text-[10px] text-slate-600 mt-1.5">Для родителей баллы не начисляются — скоринг ведём по детям</div>
+              )}
             </div>
 
             <div className="mt-4 space-y-2 text-sm">
@@ -313,6 +324,35 @@ export default function ContactDetail() {
               {contact.school && <div className="flex items-center gap-2.5 text-slate-300"><School size={14} className="text-slate-500" /> {contact.school}</div>}
               {contact.grade && <div className="flex items-center gap-2.5 text-slate-300"><GraduationCap size={14} className="text-slate-500" /> {contact.grade}</div>}
               {contact.birth_date && <div className="flex items-center gap-2.5 text-slate-300"><Calendar size={14} className="text-slate-500" /> {new Date(contact.birth_date).toLocaleDateString('ru-RU')}</div>}
+              {(() => {
+                const ri = resolveRole(contact);
+                const meta = ROLE_META[ri.role];
+                if (ri.role === 'unknown' && !ri.suspicious && !hasPerm('contacts.edit')) return null;
+                return (
+                  <div className="flex items-center gap-2 text-slate-300">
+                    <Users size={14} className="text-slate-500 shrink-0" />
+                    <span className="font-medium" style={{ color: meta.color }}>{meta.label}</span>
+                    {ri.age !== null && <span className="text-slate-500 text-xs">· {ri.age} {ageWord(ri.age)}</span>}
+                    {ri.manual && <span className="text-[10px] text-slate-600">(вручную)</span>}
+                    {ri.suspicious && <span className="text-[10px] text-amber-400">проверьте дату рождения</span>}
+                  </div>
+                );
+              })()}
+              {hasPerm('contacts.edit') && (
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="text-slate-600">Роль:</span>
+                  <select
+                    value={contact.contact_role || ''}
+                    onChange={async e => { await api.patch(`/api/contacts/${contact.id}`, { contact_role: e.target.value }); load(); }}
+                    className="bg-white/4 border border-white/10 rounded-lg px-2 py-1 text-slate-300 outline-none [&>option]:bg-slate-900"
+                  >
+                    <option value="">авто (по дате рождения)</option>
+                    <option value="child">школьник</option>
+                    <option value="adult">взрослый</option>
+                    <option value="parent">родитель</option>
+                  </select>
+                </div>
+              )}
             </div>
 
             {(contact.source || contact.ege_score || contact.owner_name) && (

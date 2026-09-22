@@ -48,6 +48,20 @@ app.use('/api/backup', backupRouter);
 // 404 для API
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint не найден' }));
 
+// ---------- Разовый пересчёт ролей (ребёнок/родитель) для уже живых баз ----------
+try {
+  const done = db.prepare("SELECT value FROM settings WHERE key = 'roles_recalc_done'").get();
+  if (done?.value !== '1') {
+    const { recalcScore } = await import('./util.js');
+    const ids = db.prepare('SELECT id FROM contacts').all();
+    for (const { id } of ids) recalcScore(id);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('roles_recalc_done', '1')").run();
+    if (ids.length) console.log(`👨‍👩‍👧 Роли учтены — баллы пересчитаны для ${ids.length} контактов`);
+  }
+} catch (e) {
+  console.log('⚠️ Пересчёт ролей не удался:', e.message);
+}
+
 // ---------- Первый запуск: заполняем календарь из плана мероприятий ----------
 // Если рядом с проектом лежит KAIT20_100_DOD.xlsx и событий ещё нет — загружаем его автоматически.
 try {
