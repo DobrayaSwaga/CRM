@@ -55,26 +55,30 @@ export default function BootScreen({ onDone }: { onDone: () => void }) {
         <div className="blob w-[350px] h-[350px] -bottom-32 left-1/3" style={{ background: '#0e7490', animationDelay: '-8s' }} />
       </div>
 
-      <div className="boot-logo mb-8">
+      <div className="relative boot-logo mb-8">
+        <div className="boot-ring1" />
+        <div className="boot-ring2" />
         <EyeLogo size={132} />
       </div>
 
       <h1 className="text-3xl font-bold glow-text mb-2">NexusCRM</h1>
-      <p className="text-sm text-slate-500 mb-10 h-5 transition-opacity" key={phraseIdx}>{PHRASES[phraseIdx]}</p>
+      <p className="text-sm text-slate-500 mb-10 h-5 animate-fade-in" key={phraseIdx}>{PHRASES[phraseIdx]}</p>
 
       <div className="w-64">
         <div className="h-1.5 rounded-full bg-white/6 overflow-hidden">
           <div
-            className="h-full rounded-full boot-progress-bar"
+            className="relative h-full rounded-full boot-progress-bar overflow-hidden"
             style={{
               animationDuration: `${duration}ms`,
               background: 'linear-gradient(90deg, #6366f1, #a855f7, #22d3ee)',
             }}
-          />
+          >
+            <div className="boot-sheen" />
+          </div>
         </div>
         <div className="flex justify-between items-center mt-2.5 text-[11px] text-slate-600">
           <span>{pct}%</span>
-          <span>{(duration / 1000).toFixed(1)} c</span>
+          <span className="boot-dots flex gap-1 items-center"><span /><span /><span /></span>
         </div>
       </div>
     </div>

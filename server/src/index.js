@@ -48,6 +48,26 @@ app.use('/api/backup', backupRouter);
 // 404 для API
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint не найден' }));
 
+// ---------- Первый запуск: заполняем календарь из плана мероприятий ----------
+// Если рядом с проектом лежит KAIT20_100_DOD.xlsx и событий ещё нет — загружаем его автоматически.
+try {
+  const eventsExist = db.prepare('SELECT id FROM dod_events LIMIT 1').get();
+  if (!eventsExist) {
+    const planCandidates = [
+      path.join(process.cwd(), 'KAIT20_100_DOD.xlsx'),
+      path.resolve(__dirname, '../../KAIT20_100_DOD.xlsx'),
+    ];
+    const planPath = planCandidates.find(p => fs.existsSync(p));
+    if (planPath) {
+      const { importEventPlanFromBuffer } = await import('./plan-import.js');
+      const res = importEventPlanFromBuffer(fs.readFileSync(planPath), null);
+      console.log(`📅 Календарь заполнен автоматически: ${res.created} мероприятий из ${path.basename(planPath)}`);
+    }
+  }
+} catch (e) {
+  console.log('⚠️ Автозаполнение календаря не удалось:', e.message);
+}
+
 // ---------- Раздача интерфейса ----------
 // Сборка лежит в server/public — папка переживает снапшоты (dist — нет)
 const clientDist = path.resolve(__dirname, '../public');
