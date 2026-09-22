@@ -6,6 +6,57 @@ import { useAuth } from '../auth';
 import { Card, Button, Input, Textarea, Spinner, EmptyState, Modal, Field, TempBadge, Badge } from '../components/ui';
 import { PageHeader } from '../components/Layout';
 
+// Список мероприятий сгруппирован по месяцам и годам: «Сентябрь 2026», «Январь 2027»…
+function DodGrid({ events, onOpen }: { events: any[]; onOpen: (id: number) => void }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const items: ({ kind: 'header'; key: string; label: string; past: boolean } | { kind: 'event'; key: string; event: any })[] = [];
+  let lastKey = '';
+  for (const e of events) {
+    const monthKey = e.event_date.slice(0, 7); // «2026-09»
+    if (monthKey !== lastKey) {
+      lastKey = monthKey;
+      const d = new Date(Number(monthKey.slice(0, 4)), Number(monthKey.slice(5, 7)) - 1, 1);
+      items.push({ kind: 'header', key: `h-${monthKey}`, label: d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' }), past: monthKey < today.slice(0, 7) });
+    }
+    items.push({ kind: 'event', key: String(e.id), event: e });
+  }
+
+  return (
+    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+      {items.map(item => item.kind === 'header' ? (
+        <div key={item.key} className="md:col-span-2 xl:col-span-3 flex items-center gap-3 mt-3 first:mt-0">
+          <span className={`text-sm font-semibold capitalize ${item.past ? 'text-slate-600' : 'text-slate-300'}`}>{item.label}</span>
+          <div className="flex-1 h-px bg-white/8" />
+        </div>
+      ) : (() => {
+        const e = item.event;
+        const isPast = e.event_date < new Date().toISOString();
+        return (
+          <Card key={item.key} hover className="p-4" onClick={() => onOpen(e.id)}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500/30 to-purple-500/20 border border-violet-400/30 flex items-center justify-center shrink-0">
+                <GraduationCap size={20} className="text-violet-300" />
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-lg border ${isPast ? 'bg-white/4 border-white/10 text-slate-500' : 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'}`}>
+                {isPast ? 'Прошёл' : 'Предстоит'}
+              </span>
+            </div>
+            <h3 className="font-semibold text-slate-200 mt-3">{e.name}</h3>
+            <div className="text-xs text-slate-500 mt-1">
+              {new Date(e.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+              {e.location && <> · <MapPin size={10} className="inline" /> {e.location}</>}
+            </div>
+            <div className="flex items-center gap-1.5 mt-3 text-xs text-slate-400">
+              <Users size={13} className="text-violet-400" />
+              <span className="font-semibold text-slate-200">{e.attendees_count}</span> посетителей
+            </div>
+          </Card>
+        );
+      })())}
+    </div>
+  );
+}
+
 export default function Dod() {
   const { hasPerm } = useAuth();
   const [events, setEvents] = useState<any[] | null>(null);
@@ -95,32 +146,7 @@ export default function Dod() {
       {events.length === 0 ? (
         <Card><EmptyState icon={<GraduationCap size={40} />} title="Мероприятий нет" hint="Создайте первый ДОД, а после загрузите список посетителей из Excel — система сама пересчитает баллы" /></Card>
       ) : (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {events.map(e => {
-            const isPast = e.event_date < new Date().toISOString();
-            return (
-              <Card key={e.id} hover className="p-4" onClick={() => openEvent(e.id)}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500/30 to-purple-500/20 border border-violet-400/30 flex items-center justify-center shrink-0">
-                    <GraduationCap size={20} className="text-violet-300" />
-                  </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-lg border ${isPast ? 'bg-white/4 border-white/10 text-slate-500' : 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'}`}>
-                    {isPast ? 'Прошёл' : 'Предстоит'}
-                  </span>
-                </div>
-                <h3 className="font-semibold text-slate-200 mt-3">{e.name}</h3>
-                <div className="text-xs text-slate-500 mt-1">
-                  {new Date(e.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}
-                  {e.location && <> · <MapPin size={10} className="inline" /> {e.location}</>}
-                </div>
-                <div className="flex items-center gap-1.5 mt-3 text-xs text-slate-400">
-                  <Users size={13} className="text-violet-400" />
-                  <span className="font-semibold text-slate-200">{e.attendees_count}</span> посетителей
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+        <DodGrid events={events} onOpen={openEvent} />
       )}
 
       {/* Импорт плана мероприятий */}
@@ -172,7 +198,7 @@ export default function Dod() {
         {selected && (
           <div className="space-y-4">
             <div className="flex items-center gap-4 text-xs text-slate-500">
-              <span>{new Date(selected.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })}</span>
+              <span>{new Date(selected.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               {selected.location && <span className="flex items-center gap-1"><MapPin size={11} /> {selected.location}</span>}
               <span className="flex items-center gap-1"><Users size={11} /> {selected.attendees.length} посетителей{(selected.registrations?.length || 0) > 0 && ` + ${selected.registrations.length} регистраций`}</span>
             </div>

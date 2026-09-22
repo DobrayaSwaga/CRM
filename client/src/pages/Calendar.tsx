@@ -84,8 +84,13 @@ export default function CalendarPage() {
                     </div>
                     <div className="space-y-1">
                       {dayDod.map(d => (
-                        <Link key={`d${d.id}`} to="/dod" className="block text-[10px] px-1.5 py-1 rounded-md bg-violet-500/20 border border-violet-400/30 text-violet-300 truncate hover:bg-violet-500/30 transition-colors">
-                          <GraduationCap size={9} className="inline mr-1" />{d.name}
+                        <Link
+                          key={`d${d.id}`}
+                          to="/dod"
+                          title={new Date(d.event_date).toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          className="block text-[10px] px-1.5 py-1 rounded-md bg-violet-500/20 border border-violet-400/30 text-violet-300 truncate hover:bg-violet-500/30 transition-colors"
+                        >
+                          <GraduationCap size={9} className="inline mr-1" />{d.event_date.length > 10 && <span className="font-semibold">{d.event_date.slice(11, 16)} </span>}{d.name}
                         </Link>
                       ))}
                       {dayTasks.slice(0, 3).map(t => (

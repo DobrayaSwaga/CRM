@@ -13,8 +13,15 @@ dodRouter.get('/', requireAuth, (_req, res) => {
     SELECT d.*, u.name AS created_by_name,
       (SELECT COUNT(DISTINCT t.contact_id) FROM touchpoints t WHERE t.dod_event_id = d.id AND t.type = 'dod') AS attendees_count
     FROM dod_events d LEFT JOIN users u ON u.id = d.created_by
-    ORDER BY d.event_date DESC
   `).all();
+  // Порядок для человека: сначала предстоящие (ближайшие сверху), затем прошедшие (недавние первыми)
+  const today = new Date().toISOString().slice(0, 10);
+  events.sort((a, b) => {
+    const aPast = a.event_date.slice(0, 10) < today;
+    const bPast = b.event_date.slice(0, 10) < today;
+    if (aPast !== bPast) return aPast ? 1 : -1;
+    return aPast ? b.event_date.localeCompare(a.event_date) : a.event_date.localeCompare(b.event_date);
+  });
   res.json({ events });
 });
 
