@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#17255e"/>
+      <stop offset="45%" stopColor="#5b2ba8"/>
+      <stop offset="78%" stopColor="#7c3aed"/>
+      <stop offset="100%" stopColor="#22a1dd"/>
+    </linearGradient>
+    <clipPath id="c"><circle cx="60" cy="60" r="27"/></clipPath>
+  </defs>
+  <circle cx="60" cy="60" r="57" fill="url(#g)"/>
+  <circle cx="60" cy="60" r="50" fill="none" stroke="#f4f4ff" stroke-opacity=".9" stroke-width="2.4"/>
+  <g fill="#0d1c40" stroke="#f4f4ff" stroke-opacity=".9" stroke-width="2.4">
+    <circle cx="60" cy="14.5" r="8"/>
+    <circle cx="21.5" cy="90" r="8"/>
+    <circle cx="98.5" cy="90" r="8"/>
+  </g>
+  <circle cx="60" cy="60" r="27" fill="#0a1834" stroke="#f4f4ff" stroke-opacity=".92" stroke-width="3"/>
+  <g clip-path="url(#c)">
+    <circle cx="60" cy="60" r="14" fill="#132a5c"/>
+    <circle cx="54" cy="66" r="7.5" fill="#f4f4ff"/>
+    <circle cx="68.5" cy="51" r="5" fill="#f4f4ff"/>
+  </g>
+</svg>

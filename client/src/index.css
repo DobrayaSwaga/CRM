@@ -1,0 +1,256 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --color-ink-950: #070a13;
+  --color-ink-900: #0b0f1c;
+  --color-ink-800: #11162a;
+  --color-ink-700: #1a2138;
+  --animate-fade-in: fade-in 0.3s ease-out;
+  --animate-slide-up: slide-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-float: float 12s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.05); }
+  66% { transform: translate(-20px, 25px) scale(0.97); }
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: #e2e8f0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Фоновая сцена: градиентная сетка + плавающие блобы */
+.app-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99, 102, 241, 0.15), transparent),
+    radial-gradient(ellipse 60% 50% at 90% 10%, rgba(139, 92, 246, 0.12), transparent),
+    radial-gradient(ellipse 50% 40% at 50% 110%, rgba(16, 185, 129, 0.08), transparent),
+    var(--color-ink-950);
+}
+.app-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 90% 70% at 50% 30%, black, transparent);
+}
+.blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.35;
+  animation: var(--animate-float);
+}
+
+/* Стекло */
+.glass {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025));
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.glass-strong {
+  background: linear-gradient(145deg, rgba(30, 36, 60, 0.75), rgba(17, 22, 42, 0.85));
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.glass-hover {
+  transition: all 0.2s ease;
+}
+.glass-hover:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+  transform: translateY(-1px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Скроллбары */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.32); background-clip: padding-box; }
+
+/* Инпуты */
+input, select, textarea {
+  color-scheme: dark;
+}
+
+.glow-text {
+  background: linear-gradient(120deg, #a5b4fc, #c4b5fd, #67e8f9);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Канбан drag */
+.drag-over {
+  outline: 2px dashed rgba(139, 92, 246, 0.5);
+  outline-offset: -4px;
+}
+
+/* Текст на цветных акцентах — белый в обеих темах */
+.on-accent { color: #ffffff !important; }
+
+/* ============ Логотип-глаз: взгляд и моргание ============ */
+/* Влево → вправо → в центр; паузы между движениями. Полный цикл 9 секунд. */
+@keyframes eye-look {
+  0%, 10%   { transform: translateX(0); }      /* центр */
+  17%, 27%  { transform: translateX(-22%); }   /* влево */
+  36%, 46%  { transform: translateX(22%); }    /* вправо */
+  55%, 100% { transform: translateX(0); }      /* обратно в центр */
+}
+.eye-look {
+  animation: eye-look 9s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Морг — быстрое сжатие по вертикали, раз в цикл (привязан к своим 5 с, независимо от взгляда) */
+@keyframes eye-blink {
+  0%, 90%, 100% { transform: scaleY(1); }
+  93%           { transform: scaleY(0.06); }
+  96%           { transform: scaleY(1); }
+}
+.eye-blink {
+  animation: eye-blink 5s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* ============ Экран загрузки ============ */
+@keyframes boot-progress {
+  0%   { width: 4%; }
+  25%  { width: 34%; }
+  50%  { width: 58%; }
+  75%  { width: 79%; }
+  94%  { width: 92%; }
+  100% { width: 96%; }
+}
+.boot-progress-bar {
+  animation-name: boot-progress;
+  animation-timing-function: cubic-bezier(0.25, 0.6, 0.35, 1);
+  animation-fill-mode: forwards;
+}
+@keyframes boot-fade-out {
+  from { opacity: 1; }
+  to   { opacity: 0; visibility: hidden; }
+}
+.boot-fade-out {
+  animation: boot-fade-out 0.45s ease forwards;
+}
+@keyframes boot-pulse {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 18px rgba(124, 58, 237, 0.45)); }
+  50%      { transform: scale(1.04); filter: drop-shadow(0 0 34px rgba(34, 161, 221, 0.5)); }
+}
+.boot-logo {
+  animation: boot-pulse 3.2s ease-in-out infinite;
+}
+
+/* ================= СВЕТЛАЯ ТЕМА ================= */
+/* Tailwind v4 собирает утилиты из CSS-переменных палитры — переворачиваем шкалу slate
+   и «белые» полупрозрачные подложки, компоненты менять не нужно. */
+[data-theme='light'] {
+  --color-slate-100: #0b1220;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #5b6b82;
+  --color-slate-600: #94a3b8;
+  --color-slate-900: #ffffff;
+  --color-white: #0f172a; /* bg-white/N и border-white/N станут тёмными полутонами */
+  --color-ink-950: #eef1f7;
+  --color-ink-900: #e4e9f2;
+  --color-ink-800: #f8fafc;
+  --color-ink-700: #ffffff;
+}
+
+[data-theme='light'] body {
+  background: var(--color-ink-950);
+  color: #1e293b;
+}
+
+[data-theme='light'] .app-bg {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99, 102, 241, 0.12), transparent),
+    radial-gradient(ellipse 60% 50% at 90% 10%, rgba(139, 92, 246, 0.10), transparent),
+    radial-gradient(ellipse 50% 40% at 50% 110%, rgba(16, 185, 129, 0.07), transparent),
+    var(--color-ink-950);
+}
+[data-theme='light'] .app-bg::before {
+  background-image:
+    linear-gradient(rgba(71, 85, 105, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 85, 105, 0.05) 1px, transparent 1px);
+}
+[data-theme='light'] .blob { opacity: 0.18; }
+
+[data-theme='light'] .glass {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.62));
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+[data-theme='light'] .glass-strong {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(248, 250, 252, 0.96));
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+[data-theme='light'] .glass-hover:hover {
+  border-color: rgba(15, 23, 42, 0.16);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.72));
+  box-shadow: 0 12px 36px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+[data-theme='light'] ::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.25);
+  background-clip: padding-box;
+}
+[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.4);
+  background-clip: padding-box;
+}
+
+[data-theme='light'] input,
+[data-theme='light'] select,
+[data-theme='light'] textarea {
+  color-scheme: light;
+}
+
+[data-theme='light'] .glow-text {
+  background: linear-gradient(120deg, #4f46e5, #7c3aed, #0891b2);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+[data-theme='light'] .drag-over {
+  outline-color: rgba(124, 58, 237, 0.6);
+}
