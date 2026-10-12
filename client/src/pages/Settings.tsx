@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, ShieldCheck, SlidersHorizontal, ListTree, Flame, KeyRound, ScrollText, Plus, Trash2, Pencil, Check, X, Cpu, DatabaseBackup, Download, Upload, Camera, AlertTriangle } from 'lucide-react';
+import { Users, ShieldCheck, SlidersHorizontal, ListTree, Flame, KeyRound, ScrollText, Plus, Trash2, Pencil, Check, X, DatabaseBackup, Download, Upload, Camera, AlertTriangle } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { Card, Button, Input, Select, Spinner, Badge, Modal, Field, EmptyState } from '../components/ui';
@@ -69,7 +69,7 @@ function UsersTab() {
           {err && <div className="text-red-300 text-xs bg-red-500/10 border border-red-400/25 rounded-xl px-3 py-2">{err}</div>}
           <Field label="ФИО"><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Иванова Анна Петровна" /></Field>
           <Field label="Логин"><Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} placeholder="ivanova" /></Field>
-          <Field label="Пароль" hint="минимум 6 символов"><Input type="text" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} /></Field>
+          <Field label="Пароль" hint="минимум 8 символов"><Input type="text" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} /></Field>
           <Field label="Роль">
             <Select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))}>
               <option value="">— выберите —</option>
@@ -345,7 +345,6 @@ function FieldsTab() {
 function ScoringTab() {
   const [rules, setRules] = useState<any[]>([]);
   const [thresholds, setThresholds] = useState({ hot: 80, warm: 30 });
-  const [ml, setMl] = useState<any>(null);
   const [statuses, setStatuses] = useState<any[]>([]);
   const [showRule, setShowRule] = useState(false);
   const [form, setForm] = useState<any>({ name: '', rule_type: 'touchpoint', touchpoint_type: 'dod', min_count: 1, period_days: '', status_id: '', points: 30 });
@@ -353,7 +352,6 @@ function ScoringTab() {
 
   const load = () => {
     api.get('/api/scoring/rules').then(d => { setRules(d.rules); setThresholds(d.thresholds); });
-    api.get('/api/scoring/ml-readiness').then(setMl);
     api.get('/api/refs/statuses').then(d => setStatuses(d.statuses));
   };
   useEffect(load, []);
@@ -427,32 +425,6 @@ function ScoringTab() {
           ))}
         </div>
       </div>
-
-      {/* ML-готовность */}
-      {ml && (
-        <div className="glass rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2 mb-2"><Cpu size={15} className="text-cyan-400" /> Будущая ML-модель</h3>
-          <p className="text-xs text-slate-400 mb-3">{ml.recommendation}</p>
-          <div className="flex gap-3">
-            <div className="flex-1 p-3 rounded-xl bg-white/3 border border-white/8 text-center">
-              <div className="text-xl font-bold text-slate-200">{ml.total_contacts}</div>
-              <div className="text-[10px] text-slate-500">всего в базе</div>
-            </div>
-            <div className="flex-1 p-3 rounded-xl bg-emerald-500/6 border border-emerald-400/20 text-center">
-              <div className="text-xl font-bold text-emerald-300">{ml.success}</div>
-              <div className="text-[10px] text-slate-500">поступило</div>
-            </div>
-            <div className="flex-1 p-3 rounded-xl bg-red-500/6 border border-red-400/20 text-center">
-              <div className="text-xl font-bold text-red-300">{ml.fail}</div>
-              <div className="text-[10px] text-slate-500">отказов</div>
-            </div>
-            <div className="flex-1 p-3 rounded-xl bg-cyan-500/6 border border-cyan-400/20 text-center">
-              <div className="text-xl font-bold text-cyan-300">{ml.ready ? '100%' : `${Math.min(100, Math.round(((ml.success + ml.fail) / 100) * 100))}%`}</div>
-              <div className="text-[10px] text-slate-500">готовность</div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <Modal open={showRule} onClose={() => setShowRule(false)} title="Новое правило скоринга">
         <div className="space-y-3">
@@ -663,7 +635,7 @@ function ProfileTab() {
       <h3 className="text-sm font-semibold text-slate-300 mb-2">Сменить пароль</h3>
       <div className="space-y-2">
         <Field label="Текущий пароль"><Input type="password" value={form.oldPassword} onChange={e => setForm(f => ({ ...f, oldPassword: e.target.value }))} /></Field>
-        <Field label="Новый пароль"><Input type="password" value={form.newPassword} onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))} /></Field>
+        <Field label="Новый пароль" hint="минимум 8 символов"><Input type="password" value={form.newPassword} onChange={e => setForm(f => ({ ...f, newPassword: e.target.value }))} /></Field>
         <Field label="Повторите новый"><Input type="password" value={form.confirm} onChange={e => setForm(f => ({ ...f, confirm: e.target.value }))} /></Field>
         {msg && <div className={`text-xs rounded-xl px-3 py-2 border ${!msg.startsWith('Ошибка:') ? 'text-emerald-300 bg-emerald-500/10 border-emerald-400/25' : 'text-red-300 bg-red-500/10 border-red-400/25'}`}>{msg}</div>}
         <Button variant="primary" disabled={!form.oldPassword || !form.newPassword} onClick={async () => {

@@ -2,7 +2,7 @@
   "name": "nexus-crm",
   "version": "0.1.0",
   "private": true,
-  "description": "Локальная CRM для приёмной комиссии: лиды, ДОД, скоринг, задачи",
+  "description": "CRM для приёмной комиссии: лиды, мероприятия (ДОД/школы/внешние), скоринг, задачи",
   "scripts": {
     "setup": "npm --prefix server install && npm --prefix client install",
     "dev": "concurrently -n server,client -c blue,green \"npm start --prefix server\" \"npm run dev --prefix client\"",
@@ -11,5 +11,8 @@
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
   }
 }

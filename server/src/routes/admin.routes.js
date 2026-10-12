@@ -18,7 +18,7 @@ adminRouter.get('/users', requirePerm('admin.users'), (_req, res) => {
 adminRouter.post('/users', requirePerm('admin.users'), (req, res) => {
   const { login, password, name, role_id } = req.body || {};
   if (!login || !password || !name || !role_id) return res.status(400).json({ error: 'Заполните все поля' });
-  if (String(password).length < 6) return res.status(400).json({ error: 'Пароль — минимум 6 символов' });
+  if (String(password).length < 8) return res.status(400).json({ error: 'Пароль — минимум 8 символов' });
   const exists = db.prepare('SELECT id FROM users WHERE login = ?').get(String(login).trim());
   if (exists) return res.status(409).json({ error: 'Логин уже занят' });
   const role = db.prepare('SELECT id FROM roles WHERE id = ?').get(role_id);
@@ -42,11 +42,13 @@ adminRouter.patch('/users/:id', requirePerm('admin.users'), (req, res) => {
   }
   if (active !== undefined) db.prepare('UPDATE users SET active = ? WHERE id = ?').run(active ? 1 : 0, id);
   if (password) {
-    if (String(password).length < 6) return res.status(400).json({ error: 'Пароль — минимум 6 символов' });
+    if (String(password).length < 8) return res.status(400).json({ error: 'Пароль — минимум 8 символов' });
     db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(String(password), 10), id);
     db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
   }
-  audit(req.user.id, 'user.update', 'users', id, req.body);
+  const safeDetails = { ...req.body };
+  if (safeDetails.password) safeDetails.password = '•••';
+  audit(req.user.id, 'user.update', 'users', id, safeDetails);
   res.json({ ok: true });
 });
 

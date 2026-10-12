@@ -218,8 +218,9 @@ db.exec(`INSERT OR IGNORE INTO roles (id, name, permissions, is_system) VALUES
 
 const adminExists = db.prepare('SELECT id FROM users WHERE login = ?').get('admin');
 if (!adminExists) {
+  // Начальный пароль можно задать через переменную окружения ADMIN_PASSWORD при первом запуске
   db.prepare('INSERT INTO users (login, password_hash, name, role_id) VALUES (?,?,?,?)')
-    .run('admin', bcrypt.hashSync('admin123', 10), 'Администратор', 1);
+    .run('admin', bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10), 'Администратор', 1);
 }
 
 const statusCount = db.prepare('SELECT COUNT(*) c FROM statuses').get().c;
@@ -280,7 +281,28 @@ if (!db.prepare("SELECT id FROM scoring_rules WHERE rule_type = 'touchpoint' AND
     .run('Зарегистрировался на ДОД', 'touchpoint', JSON.stringify({ touchpoint_type: 'dod_registration', min_count: 1 }), 30);
 }
 
+// Правила для выездов в школы и внешних мероприятий — то же тепло, что и за ДОД
+const extraTouchRules = [
+  ['Посетил выезд в школу', 'school', 30],
+  ['Записался на школьном выезде', 'school_registration', 30],
+  ['Посетил внешнее мероприятие', 'external', 30],
+  ['Зарегистрировался на внешнее мероприятие', 'external_registration', 30],
+];
+for (const [name, tpType, points] of extraTouchRules) {
+  const exists = db.prepare("SELECT id FROM scoring_rules WHERE rule_type = 'touchpoint' AND condition LIKE ? LIMIT 1").get(`%"${tpType}"%`);
+  if (!exists) {
+    db.prepare('INSERT INTO scoring_rules (name, rule_type, condition, points) VALUES (?,?,?,?)')
+      .run(name, 'touchpoint', JSON.stringify({ touchpoint_type: tpType, min_count: 1 }), points);
+  }
+}
+
 // ---------- Миграции ----------
+// Тип мероприятия: dod = день открытых дверей, school = выезд в школу, external = внешнее мероприятие
+const dodCols = db.prepare('PRAGMA table_info(dod_events)').all().map(c => c.name);
+if (!dodCols.includes('event_type')) {
+  db.exec("ALTER TABLE dod_events ADD COLUMN event_type TEXT NOT NULL DEFAULT 'dod';");
+}
+
 const cols = db.prepare('PRAGMA table_info(contacts)').all().map(c => c.name);
 if (!cols.includes('search_text')) {
   db.exec("ALTER TABLE contacts ADD COLUMN search_text TEXT NOT NULL DEFAULT '';");

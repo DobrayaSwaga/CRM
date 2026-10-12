@@ -20,9 +20,10 @@ async function request<T = any>(method: string, url: string, body?: any): Promis
   return data as T;
 }
 
-async function upload<T = any>(url: string, file: File, fieldName = 'file'): Promise<T> {
+async function upload<T = any>(url: string, file: File, fieldName = 'file', fields?: Record<string, string>): Promise<T> {
   const form = new FormData();
   form.append(fieldName, file);
+  if (fields) for (const [k, v] of Object.entries(fields)) form.append(k, v);
   const res = await fetch(url, { method: 'POST', body: form, credentials: 'same-origin' });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, data);

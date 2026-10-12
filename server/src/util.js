@@ -126,6 +126,14 @@ export function resolveRole(contact) {
   return { role: 'adult', age, suspicious: false, manual: false };
 }
 
+// ---------- Типы мероприятий ----------
+// dod = день открытых дверей (приходят к нам), school = выезд в школу, external = внешнее мероприятие
+export const EVENT_TYPES = ['dod', 'school', 'external'];
+export function normEventType(v) { return EVENT_TYPES.includes(v) ? v : 'dod'; }
+// Тип касания-посещения, соответствующий типу мероприятия
+export function visitTypeOf(event) { return normEventType(event?.event_type); }
+export function registrationTypeOf(event) { return `${visitTypeOf(event)}_registration`; }
+
 // «18.09.2026» | «2026-09-18» | Date → «2026-09-18» (или '' если не распарсилось)
 export function isoDate(value) {
   if (!value && value !== 0) return '';

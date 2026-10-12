@@ -2,6 +2,7 @@ import { Router } from 'express';
 import xlsx from 'xlsx';
 import { db } from '../db.js';
 import { requirePerm } from '../auth.js';
+import { eventFlags } from './contacts.routes.js';
 
 export const exportRouter = Router();
 
@@ -55,13 +56,15 @@ exportRouter.get('/contacts', requirePerm('export.run'), (req, res) => {
   const customFields = db.prepare('SELECT * FROM custom_fields WHERE active = 1 ORDER BY sort_order').all();
   const data = rows.map(c => {
     const programs = db.prepare('SELECT p.name FROM programs p JOIN contact_programs cp ON cp.program_id = p.id WHERE cp.contact_id = ?').all(c.id).map(p => p.name).join(', ');
-    const dodCount = db.prepare("SELECT COUNT(*) c FROM touchpoints WHERE contact_id = ? AND type = 'dod'").get(c.id).c;
+    const flags = eventFlags(c.id);
     const base = {
       'Фамилия': c.last_name, 'Имя': c.first_name, 'Отчество': c.middle_name,
       'Телефон': c.phone, 'Email': c.email, 'Дата рождения': c.birth_date,
       'Город': c.city, 'Школа': c.school, 'Источник': c.source, 'Балл ЕГЭ': c.ege_score ?? '',
       'Направления': programs, 'Статус': c.status_name || '', 'Температура': TEMP_LABEL[c.temperature] || c.temperature,
-      'Баллы': c.score, 'Посещений ДОД': dodCount, 'Ответственный': c.owner_name || '',
+      'Баллы': c.score, 'Посещений ДОД': flags.dod, 'Выездов в школу': flags.school,
+      'Внешних мероприятий': flags.external, 'ДОД и школа': flags.cross ? 'Да' : '',
+      'Ответственный': c.owner_name || '',
       'Добавлен': c.created_at?.slice(0, 10),
     };
     for (const f of customFields) {

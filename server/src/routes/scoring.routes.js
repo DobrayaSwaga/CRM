@@ -11,9 +11,14 @@ scoringRouter.get('/rules', requireAuth, (_req, res) => {
   res.json({ rules, thresholds: getThresholds() });
 });
 
+const TOUCHPOINT_TYPES_OK = [
+  'dod', 'dod_registration', 'school', 'school_registration', 'external', 'external_registration',
+  'call', 'email', 'application', 'document', 'note', 'other',
+];
+
 function validateCondition(rule_type, cond) {
   if (rule_type === 'touchpoint') {
-    if (!cond.touchpoint_type || !['dod', 'call', 'email', 'application', 'document', 'note', 'other'].includes(cond.touchpoint_type)) {
+    if (!cond.touchpoint_type || !TOUCHPOINT_TYPES_OK.includes(cond.touchpoint_type)) {
       return 'Выберите тип касания';
     }
     if (!cond.min_count || Number(cond.min_count) < 1) return 'Минимальное количество — от 1';
@@ -78,24 +83,4 @@ scoringRouter.post('/recalculate', requirePerm('admin.scoring'), (req, res) => {
   // Распределение после пересчёта
   const dist = db.prepare('SELECT temperature, COUNT(*) c FROM contacts GROUP BY temperature').all();
   res.json({ recalculated: ids.length, distribution: dist });
-});
-
-// ML-готовность: статистика для будущей модели
-scoringRouter.get('/ml-readiness', requirePerm('admin.scoring'), (_req, res) => {
-  const total = db.prepare('SELECT COUNT(*) c FROM contacts').get().c;
-  const outcomes = db.prepare(`
-    SELECT s.is_success, COUNT(*) c FROM contacts c JOIN statuses s ON s.id = c.status_id
-    WHERE s.is_final = 1 GROUP BY s.is_success
-  `).all();
-  const success = outcomes.find(o => o.is_success === 1)?.c || 0;
-  const fail = outcomes.find(o => o.is_success === 0)?.c || 0;
-  res.json({
-    total_contacts: total,
-    known_outcomes: success + fail,
-    success, fail,
-    ready: success >= 50 && fail >= 50,
-    recommendation: success >= 50 && fail >= 50
-      ? 'Данных достаточно для обучения первой ML-модели'
-      : `Для ML-модели нужно минимум по 50 завершённых кейсов каждого типа. Сейчас: поступило ${success}, отказов ${fail}.`,
-  });
 });

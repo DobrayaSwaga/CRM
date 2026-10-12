@@ -8,7 +8,10 @@ import { audit, normalizePhone, recalcScore, rowToContact, UPLOADS_DIR } from '.
 
 export const contactsRouter = Router();
 
-const TOUCHPOINT_TYPES = ['dod', 'dod_registration', 'call', 'email', 'application', 'document', 'note', 'other'];
+const TOUCHPOINT_TYPES = [
+  'dod', 'dod_registration', 'school', 'school_registration', 'external', 'external_registration',
+  'call', 'email', 'application', 'document', 'note', 'other',
+];
 
 const EDITABLE_FIELDS = ['last_name', 'first_name', 'middle_name', 'phone', 'email', 'birth_date', 'city', 'school', 'grade', 'source', 'ege_score', 'status_id', 'owner_id', 'contact_role'];
 
@@ -172,8 +175,24 @@ contactsRouter.get('/:id', requirePerm('contacts.view'), (req, res) => {
     LEFT JOIN users u ON u.id = t.assignee_id
     WHERE t.contact_id = ? ORDER BY t.status = 'open' DESC, t.due_date
   `).all(id);
+  // Посещения по типам мероприятий + пересечение «был и на ДОД, и в школе»
+  contact.event_flags = eventFlags(id);
   res.json({ contact });
 });
+
+// Счётчики посещений по типам мероприятий для карточки и экспорта
+export function eventFlags(contactId) {
+  const rows = db.prepare(`
+    SELECT d.event_type AS et, COUNT(DISTINCT d.id) AS c
+    FROM touchpoints t JOIN dod_events d ON d.id = t.dod_event_id
+    WHERE t.contact_id = ? AND t.type IN ('dod','school','external')
+    GROUP BY d.event_type
+  `).all(contactId);
+  const flags = { dod: 0, school: 0, external: 0, cross: false };
+  for (const r of rows) if (r.et in flags) flags[r.et] = r.c;
+  flags.cross = flags.dod > 0 && flags.school > 0;
+  return flags;
+}
 
 // ---------- Массовые операции ----------
 contactsRouter.post('/bulk/patch', requirePerm('contacts.edit'), (req, res) => {

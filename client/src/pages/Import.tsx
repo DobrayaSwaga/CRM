@@ -5,11 +5,12 @@ import { api } from '../api';
 import { Card, Button, Spinner, Badge } from '../components/ui';
 import { PageHeader } from '../components/Layout';
 import { useAuth } from '../auth';
+import { EVENT_TYPES } from '../constants';
 
 type Detected = {
   kind: 'contacts' | 'event_attendance' | 'event_plan';
   summary?: string; eventName?: string; eventDate?: string; eventTime?: string;
-  visited?: number; registered?: number; totalEvents?: number;
+  visited?: number; registered?: number; totalEvents?: number; suggestedEventType?: string;
 };
 
 type Preview = {
@@ -26,6 +27,7 @@ export default function ImportPage() {
   const [fileObj, setFileObj] = useState<File | null>(null);
   const [mapping, setMapping] = useState<Record<number, string>>({});
   const [defaultSource, setDefaultSource] = useState('');
+  const [eventType, setEventType] = useState('dod');
   const [result, setResult] = useState<any>(null); // { mode: 'contacts' | 'attendance' | 'plan', ... }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -44,6 +46,7 @@ export default function ImportPage() {
       setFileObj(file);
       setMapping(p.guessedMapping);
       setDefaultSource(p.suggestedSource || '');
+      setEventType(p.detected?.suggestedEventType || 'dod');
       setStep(2);
     } catch (e: any) {
       setError(e.message);
@@ -73,7 +76,7 @@ export default function ImportPage() {
     setBusy(true);
     setError('');
     try {
-      const res = await api.upload('/api/import/attendance', fileObj);
+      const res = await api.upload('/api/import/attendance', fileObj, 'file', { eventType });
       setResult({ mode: 'attendance', ...res });
       setStep(3);
       loadHistory();
@@ -222,6 +225,21 @@ export default function ImportPage() {
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
                     Система найдёт событие в календаре (или создаст его), сопоставит людей по телефону и проставит посещения посетившим.
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                    <span className="text-[11px] text-slate-500 mr-1">Источник таблицы:</span>
+                    {Object.entries(EVENT_TYPES).map(([key, meta]) => (
+                      <button
+                        key={key}
+                        onClick={() => setEventType(key)}
+                        className="px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all"
+                        style={eventType === key
+                          ? { background: `${meta.color}22`, borderColor: `${meta.color}70`, color: meta.color }
+                          : { borderColor: 'rgba(255,255,255,0.1)', color: '#64748b' }}
+                      >
+                        {meta.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <Button variant="primary" onClick={importAttendance} disabled={busy}>
@@ -374,6 +392,7 @@ export default function ImportPage() {
           <h3 className="text-lg font-bold text-slate-100">Посещения загружены</h3>
           <p className="text-sm text-slate-400 mt-1">
             Мероприятие: <b className="text-violet-300">{result.event?.name}</b>
+            {result.event?.event_type && <Badge color={EVENT_TYPES[result.event.event_type]?.color || '#8b5cf6'}>{EVENT_TYPES[result.event.event_type]?.label}</Badge>}
             {result.event?.created && <Badge color="#f59e0b">создано автоматически</Badge>}
           </p>
           <div className="grid grid-cols-3 gap-3 mt-6">

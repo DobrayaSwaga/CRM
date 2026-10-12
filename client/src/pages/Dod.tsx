@@ -5,6 +5,7 @@ import { api, copyText } from '../api';
 import { useAuth } from '../auth';
 import { Card, Button, Input, Textarea, Spinner, EmptyState, Modal, Field, TempBadge, Badge } from '../components/ui';
 import { PageHeader } from '../components/Layout';
+import { EVENT_TYPES } from '../constants';
 
 // Список мероприятий сгруппирован по месяцам и годам: «Сентябрь 2026», «Январь 2027»…
 function DodGrid({ events, onOpen }: { events: any[]; onOpen: (id: number) => void }) {
@@ -37,9 +38,16 @@ function DodGrid({ events, onOpen }: { events: any[]; onOpen: (id: number) => vo
               <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500/30 to-purple-500/20 border border-violet-400/30 flex items-center justify-center shrink-0">
                 <GraduationCap size={20} className="text-violet-300" />
               </div>
-              <span className={`text-[10px] px-2 py-0.5 rounded-lg border ${isPast ? 'bg-white/4 border-white/10 text-slate-500' : 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'}`}>
-                {isPast ? 'Прошёл' : 'Предстоит'}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {e.event_type && e.event_type !== 'dod' && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-lg border" style={{ background: `${EVENT_TYPES[e.event_type]?.color}18`, borderColor: `${EVENT_TYPES[e.event_type]?.color}50`, color: EVENT_TYPES[e.event_type]?.color }}>
+                    {EVENT_TYPES[e.event_type]?.short}
+                  </span>
+                )}
+                <span className={`text-[10px] px-2 py-0.5 rounded-lg border ${isPast ? 'bg-white/4 border-white/10 text-slate-500' : 'bg-emerald-500/15 border-emerald-400/30 text-emerald-300'}`}>
+                  {isPast ? 'Прошёл' : 'Предстоит'}
+                </span>
+              </div>
             </div>
             <h3 className="font-semibold text-slate-200 mt-3">{e.name}</h3>
             <div className="text-xs text-slate-500 mt-1">
@@ -62,7 +70,7 @@ export default function Dod() {
   const [events, setEvents] = useState<any[] | null>(null);
   const [selected, setSelected] = useState<any>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: '', event_date: '', location: '', description: '' });
+  const [form, setForm] = useState({ name: '', event_date: '', location: '', description: '', event_type: 'dod' });
   const [showImport, setShowImport] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
   const [showPlanImport, setShowPlanImport] = useState(false);
@@ -101,7 +109,7 @@ export default function Dod() {
   const create = async () => {
     await api.post('/api/dod-events', form);
     setShowCreate(false);
-    setForm({ name: '', event_date: '', location: '', description: '' });
+    setForm({ name: '', event_date: '', location: '', description: '', event_type: 'dod' });
     load();
   };
 
@@ -178,8 +186,24 @@ export default function Dod() {
       </Modal>
 
       {/* Создание */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Новое мероприятие ДОД">
+      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Новое мероприятие">
         <div className="space-y-3">
+          <Field label="Тип мероприятия">
+            <div className="flex gap-1.5 flex-wrap">
+              {Object.entries(EVENT_TYPES).map(([key, meta]) => (
+                <button
+                  key={key} type="button"
+                  onClick={() => setForm(f => ({ ...f, event_type: key }))}
+                  className="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
+                  style={form.event_type === key
+                    ? { background: `${meta.color}22`, borderColor: `${meta.color}70`, color: meta.color }
+                    : { borderColor: 'rgba(255,255,255,0.1)', color: '#64748b' }}
+                >
+                  {meta.label}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label="Название"><Input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="ДОД Института информационных технологий" /></Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Дата и время"><Input type="datetime-local" value={form.event_date} onChange={e => setForm(f => ({ ...f, event_date: e.target.value }))} /></Field>
@@ -197,10 +221,27 @@ export default function Dod() {
       <Modal open={!!selected} onClose={() => { setSelected(null); setImportResult(null); setCopied(0); }} title={selected?.name || ''} width="max-w-2xl">
         {selected && (
           <div className="space-y-4">
-            <div className="flex items-center gap-4 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
               <span>{new Date(selected.event_date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               {selected.location && <span className="flex items-center gap-1"><MapPin size={11} /> {selected.location}</span>}
               <span className="flex items-center gap-1"><Users size={11} /> {selected.attendees.length} посетителей{(selected.registrations?.length || 0) > 0 && ` + ${selected.registrations.length} регистраций`}</span>
+              {canManage ? (
+                <select
+                  value={EVENT_TYPES[selected.event_type] ? selected.event_type : 'dod'}
+                  onChange={async e => {
+                    await api.patch(`/api/dod-events/${selected.id}`, { event_type: e.target.value });
+                    openEvent(selected.id);
+                    load();
+                  }}
+                  title="Источник мероприятия — влияет на тип отметок о посещении"
+                  className="bg-white/4 border border-white/10 rounded-lg px-2 py-1 text-[11px] outline-none [&>option]:bg-slate-900"
+                  style={{ color: EVENT_TYPES[selected.event_type]?.color || '#8b5cf6' }}
+                >
+                  {Object.entries(EVENT_TYPES).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}
+                </select>
+              ) : (
+                <Badge color={EVENT_TYPES[selected.event_type]?.color || '#8b5cf6'}>{EVENT_TYPES[selected.event_type]?.label || 'ДОД'}</Badge>
+              )}
             </div>
 
             {canManage && (

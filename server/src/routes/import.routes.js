@@ -3,7 +3,7 @@ import multer from 'multer';
 import xlsx from 'xlsx';
 import { db } from '../db.js';
 import { requirePerm } from '../auth.js';
-import { audit, normalizePhone, recalcScore, isoDate, parseEventDateTime } from '../util.js';
+import { audit, normalizePhone, recalcScore, isoDate, parseEventDateTime, EVENT_TYPES, normEventType, visitTypeOf, registrationTypeOf } from '../util.js';
 
 export const importRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -110,6 +110,14 @@ function prettySourceFromFilename(filename) {
   return base.replace(/[—–_]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 }
 
+// Подсказка типа мероприятия по названию: школа → school, ярмарка/внешнее → external, иначе ДОД
+export function guessEventType(text) {
+  const t = String(text || '').toLowerCase().replace(/ё/g, 'е');
+  if (/школ|гимнази|лицей|выезд/.test(t)) return 'school';
+  if (/ярмарк|форум|фестивал|внешн|смотр|олимпиад/.test(t)) return 'external';
+  return 'dod';
+}
+
 // Определяем тип файла: обычный список контактов | выгрузка участников мероприятия | план мероприятий
 function detectFile(headers, rows, special) {
   const specialVals = Object.values(special);
@@ -141,6 +149,7 @@ function detectFile(headers, rows, special) {
       eventName, eventDate: dt.date, eventTime: dt.time,
       visited, registered,
       summary: `${eventName || 'Мероприятие'}${dt.date ? ` · ${dt.date.split('-').reverse().join('.')}` : ''}`,
+      suggestedEventType: guessEventType(`${eventName} ${''}`),
     };
   }
 
@@ -174,6 +183,11 @@ importRouter.post('/preview', requirePerm('import.run'), upload.single('file'), 
 
   const fileKey = `${req.user.id}-${Date.now()}-${req.file.originalname}`;
   cacheFile(req.file.buffer, fileKey);
+  if (detected.kind === 'event_attendance') {
+    // если имя файла явно про школу/внешнее мероприятие — оно приоритетнее
+    const byFile = guessEventType(req.file.originalname);
+    if (byFile !== 'dod') detected.suggestedEventType = byFile;
+  }
   res.json({
     fileKey,
     filename: req.file.originalname,
@@ -378,6 +392,8 @@ function findCol(headersNorm, re) {
 
 function importAttendance(req, res, dodIdParam) {
   if (!req.file) return res.status(400).json({ error: 'Файл не получен' });
+  // Источник таблицы: dod (по умолчанию) | school | external — приходит полем формы
+  const wantedType = normEventType(req.body?.eventType);
   let rows;
   try {
     rows = parseSheet(req.file.buffer);
@@ -437,8 +453,8 @@ function importAttendance(req, res, dodIdParam) {
     if (!dod) {
       const iso = dt.iso || dt.date || new Date().toISOString().slice(0, 10);
       const location = addressIdx >= 0 ? String(dataRows[0]?.[addressIdx] || '').trim() : '';
-      const info = db.prepare('INSERT INTO dod_events (name, event_date, location, description, created_by) VALUES (?,?,?,?,?)')
-        .run(eventName || 'Мероприятие', iso, location, `Импортировано из файла «${req.file.originalname}»`, req.user.id);
+      const info = db.prepare('INSERT INTO dod_events (name, event_date, location, description, event_type, created_by) VALUES (?,?,?,?,?,?)')
+        .run(eventName || 'Мероприятие', iso, location, `Импортировано из файла «${req.file.originalname}»`, wantedType, req.user.id);
       dod = db.prepare('SELECT * FROM dod_events WHERE id = ?').get(Number(info.lastInsertRowid));
       eventCreated = true;
     }
@@ -446,6 +462,8 @@ function importAttendance(req, res, dodIdParam) {
 
   const dmy = dod.event_date.slice(0, 10).split('-').reverse().join('.');
   const sourceLabel = `${dod.name} · ${dmy}`;
+  const vt = visitTypeOf(dod);
+  const rt = registrationTypeOf(dod);
   const statuses = db.prepare('SELECT id FROM statuses ORDER BY sort_order LIMIT 1').get();
   let matched = 0, created = 0, visited = 0, registered = 0, already = 0, skipped = 0;
 
@@ -508,19 +526,19 @@ function importAttendance(req, res, dodIdParam) {
         }
       }
 
-      // Касание: посещение или регистрация (с защитой от повторов)
+      // Касание: посещение или регистрация (тип — по типу мероприятия; с защитой от повторов)
       if (mode === 'visit') {
-        const exists = db.prepare("SELECT id FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = 'dod'").get(dod.id, contact.id);
+        const exists = db.prepare('SELECT id FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = ?').get(dod.id, contact.id, vt);
         if (!exists) {
           db.prepare("INSERT INTO touchpoints (contact_id, type, title, event_date, dod_event_id, created_by) VALUES (?,?,?,?,?,?)")
-            .run(contact.id, 'dod', `Посещение: ${dod.name}`, dod.event_date, dod.id, req.user.id);
+            .run(contact.id, vt, `Посещение: ${dod.name}`, dod.event_date, dod.id, req.user.id);
           visited++;
         } else already++;
       } else {
-        const exists = db.prepare("SELECT id FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = 'dod_registration'").get(dod.id, contact.id);
+        const exists = db.prepare('SELECT id FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = ?').get(dod.id, contact.id, rt);
         if (!exists) {
           db.prepare("INSERT INTO touchpoints (contact_id, type, title, event_date, dod_event_id, created_by) VALUES (?,?,?,?,?,?)")
-            .run(contact.id, 'dod_registration', `Регистрация: ${dod.name}`, dod.event_date, dod.id, req.user.id);
+            .run(contact.id, rt, `Регистрация: ${dod.name}`, dod.event_date, dod.id, req.user.id);
           registered++;
         } else already++;
       }
@@ -536,7 +554,7 @@ function importAttendance(req, res, dodIdParam) {
   }
   audit(req.user.id, 'import.attendance', 'dod_events', dod.id, { matched, created, visited, registered, skipped });
   res.json({
-    event: { id: dod.id, name: dod.name, event_date: dod.event_date, created: eventCreated },
+    event: { id: dod.id, name: dod.name, event_date: dod.event_date, event_type: dod.event_type, created: eventCreated },
     total: dataRows.length, matched, created, visited, registered, already, skipped,
   });
 }

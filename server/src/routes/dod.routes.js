@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { db } from '../db.js';
 import { requireAuth, requirePerm } from '../auth.js';
-import { audit, recalcScore } from '../util.js';
+import { audit, recalcScore, EVENT_TYPES, normEventType, visitTypeOf, registrationTypeOf } from '../util.js';
 import { importEventPlanFromBuffer } from '../plan-import.js';
 
 export const dodRouter = Router();
@@ -11,7 +11,7 @@ const planUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize:
 dodRouter.get('/', requireAuth, (_req, res) => {
   const events = db.prepare(`
     SELECT d.*, u.name AS created_by_name,
-      (SELECT COUNT(DISTINCT t.contact_id) FROM touchpoints t WHERE t.dod_event_id = d.id AND t.type = 'dod') AS attendees_count
+      (SELECT COUNT(DISTINCT t.contact_id) FROM touchpoints t WHERE t.dod_event_id = d.id AND t.type IN ('dod','school','external')) AS attendees_count
     FROM dod_events d LEFT JOIN users u ON u.id = d.created_by
   `).all();
   // Порядок для человека: сначала предстоящие (ближайшие сверху), затем прошедшие (недавние первыми)
@@ -29,33 +29,36 @@ dodRouter.get('/:id', requireAuth, (req, res) => {
   const id = Number(req.params.id);
   const event = db.prepare('SELECT * FROM dod_events WHERE id = ?').get(id);
   if (!event) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  const vt = visitTypeOf(event);
+  const rt = registrationTypeOf(event);
   event.attendees = db.prepare(`
     SELECT c.id, c.last_name, c.first_name, c.middle_name, c.phone, c.email, c.score, c.temperature, s.name AS status_name
     FROM touchpoints t
     JOIN contacts c ON c.id = t.contact_id
     LEFT JOIN statuses s ON s.id = c.status_id
-    WHERE t.dod_event_id = ? AND t.type = 'dod'
+    WHERE t.dod_event_id = ? AND t.type = ?
     ORDER BY c.last_name
-  `).all(id);
+  `).all(id, vt);
   // Зарегистрировались, но не дошли — тоже лиды для дожима
   event.registrations = db.prepare(`
     SELECT c.id, c.last_name, c.first_name, c.middle_name, c.phone, c.email, c.score, c.temperature, s.name AS status_name
     FROM touchpoints t
     JOIN contacts c ON c.id = t.contact_id
     LEFT JOIN statuses s ON s.id = c.status_id
-    WHERE t.dod_event_id = ? AND t.type = 'dod_registration'
-      AND c.id NOT IN (SELECT contact_id FROM touchpoints WHERE dod_event_id = ? AND type = 'dod')
+    WHERE t.dod_event_id = ? AND t.type = ?
+      AND c.id NOT IN (SELECT contact_id FROM touchpoints WHERE dod_event_id = ? AND type = ?)
     ORDER BY c.last_name
-  `).all(id, id);
+  `).all(id, rt, id, vt);
   res.json({ event });
 });
 
 dodRouter.post('/', requirePerm('dod.manage'), (req, res) => {
-  const { name, event_date, location, description } = req.body || {};
+  const { name, event_date, location, description, event_type } = req.body || {};
   if (!name?.trim()) return res.status(400).json({ error: 'Укажите название' });
   if (!event_date) return res.status(400).json({ error: 'Укажите дату' });
-  const info = db.prepare('INSERT INTO dod_events (name, event_date, location, description, created_by) VALUES (?,?,?,?,?)')
-    .run(name.trim(), event_date, location || '', description || '', req.user.id);
+  if (event_type !== undefined && !EVENT_TYPES.includes(event_type)) return res.status(400).json({ error: 'Тип: dod | school | external' });
+  const info = db.prepare('INSERT INTO dod_events (name, event_date, location, description, event_type, created_by) VALUES (?,?,?,?,?,?)')
+    .run(name.trim(), event_date, location || '', description || '', normEventType(event_type), req.user.id);
   audit(req.user.id, 'dod.create', 'dod_events', Number(info.lastInsertRowid));
   res.status(201).json({ id: Number(info.lastInsertRowid) });
 });
@@ -67,6 +70,19 @@ dodRouter.patch('/:id', requirePerm('dod.manage'), (req, res) => {
   if (b.event_date !== undefined) db.prepare('UPDATE dod_events SET event_date = ? WHERE id = ?').run(b.event_date, id);
   if (b.location !== undefined) db.prepare('UPDATE dod_events SET location = ? WHERE id = ?').run(String(b.location), id);
   if (b.description !== undefined) db.prepare('UPDATE dod_events SET description = ? WHERE id = ?').run(String(b.description), id);
+  if (b.event_type !== undefined) {
+    if (!EVENT_TYPES.includes(b.event_type)) return res.status(400).json({ error: 'Тип: dod | school | external' });
+    const ev = db.prepare('SELECT * FROM dod_events WHERE id = ?').get(id);
+    if (ev) {
+      const fromVisit = visitTypeOf(ev), fromReg = registrationTypeOf(ev);
+      db.prepare('UPDATE dod_events SET event_type = ? WHERE id = ?').run(b.event_type, id);
+      // Переводим уже отмеченные касания на тип нового мероприятия и пересчитываем баллы
+      const affected = db.prepare('SELECT DISTINCT contact_id FROM touchpoints WHERE dod_event_id = ?').all(id);
+      db.prepare('UPDATE touchpoints SET type = ? WHERE dod_event_id = ? AND type = ?').run(visitTypeOf({ event_type: b.event_type }), id, fromVisit);
+      db.prepare('UPDATE touchpoints SET type = ? WHERE dod_event_id = ? AND type = ?').run(registrationTypeOf({ event_type: b.event_type }), id, fromReg);
+      for (const { contact_id } of affected) recalcScore(contact_id);
+    }
+  }
   res.json({ ok: true });
 });
 
@@ -88,10 +104,11 @@ dodRouter.post('/:id/attend', requirePerm('dod.manage'), (req, res) => {
   const { contact_id } = req.body || {};
   const contact = db.prepare('SELECT id FROM contacts WHERE id = ?').get(Number(contact_id));
   if (!contact) return res.status(404).json({ error: 'Контакт не найден' });
-  const exists = db.prepare("SELECT id FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = 'dod'").get(dodId, contact.id);
+  const vt = visitTypeOf(dod);
+  const exists = db.prepare('SELECT id FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = ?').get(dodId, contact.id, vt);
   if (exists) return res.status(409).json({ error: 'Посещение уже отмечено' });
   db.prepare("INSERT INTO touchpoints (contact_id, type, title, event_date, dod_event_id, created_by) VALUES (?,?,?,?,?,?)")
-    .run(contact.id, 'dod', `Посещение: ${dod.name}`, dod.event_date, dodId, req.user.id);
+    .run(contact.id, vt, `Посещение: ${dod.name}`, dod.event_date, dodId, req.user.id);
   recalcScore(contact.id);
   res.status(201).json({ ok: true });
 });
@@ -99,7 +116,9 @@ dodRouter.post('/:id/attend', requirePerm('dod.manage'), (req, res) => {
 dodRouter.delete('/:id/attend/:contactId', requirePerm('dod.manage'), (req, res) => {
   const dodId = Number(req.params.id);
   const contactId = Number(req.params.contactId);
-  db.prepare("DELETE FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = 'dod'").run(dodId, contactId);
+  const ev = db.prepare('SELECT event_type FROM dod_events WHERE id = ?').get(dodId);
+  if (!ev) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  db.prepare('DELETE FROM touchpoints WHERE dod_event_id = ? AND contact_id = ? AND type = ?').run(dodId, contactId, visitTypeOf(ev));
   recalcScore(contactId);
   res.json({ ok: true });
 });

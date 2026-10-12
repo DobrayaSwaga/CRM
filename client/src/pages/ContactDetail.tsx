@@ -9,7 +9,7 @@ import { api } from '../api';
 import { useAuth } from '../auth';
 import { Card, Button, Badge, Spinner, TempBadge, Modal, Field, Input, Select, Textarea, EmptyState } from '../components/ui';
 import { ContactForm } from './Contacts';
-import { TOUCHPOINT_TYPES } from '../constants';
+import { TOUCHPOINT_TYPES, EVENT_TYPES } from '../constants';
 import { resolveRole, ROLE_META } from '../role';
 
 function scoreColor(score: number) {
@@ -375,6 +375,30 @@ export default function ContactDetail() {
             </Card>
           )}
 
+          {/* Посещения мероприятий: пересечение «ДОД + школа» подсвечиваем */}
+          {contact.event_flags && (contact.event_flags.dod > 0 || contact.event_flags.school > 0 || contact.event_flags.external > 0) && (
+            <Card className="p-4">
+              <div className="text-xs text-slate-500 mb-2">Мероприятия</div>
+              <div className="flex flex-wrap gap-1.5">
+                {contact.event_flags.dod > 0 && (
+                  <Badge color={EVENT_TYPES.dod.color}><GraduationCap size={10} /> ДОД ×{contact.event_flags.dod}</Badge>
+                )}
+                {contact.event_flags.school > 0 && (
+                  <Badge color={EVENT_TYPES.school.color}><School size={10} /> Школа ×{contact.event_flags.school}</Badge>
+                )}
+                {contact.event_flags.external > 0 && (
+                  <Badge color={EVENT_TYPES.external.color}><Sparkles size={10} /> Внешние ×{contact.event_flags.external}</Badge>
+                )}
+              </div>
+              {contact.event_flags.cross && (
+                <div className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/25 rounded-lg px-2.5 py-1.5">
+                  <Award size={11} className="shrink-0" />
+                  Был и на ДОД, и на школьном выезде — самый тёплый сигнал
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Кастомные поля */}
           {contact.custom_values?.filter((cv: any) => cv.value).length > 0 && (
             <Card className="p-4">
@@ -477,11 +501,11 @@ export default function ContactDetail() {
       </div>
 
       {/* Модалки */}
-      <Modal open={showDod} onClose={() => setShowDod(false)} title="Отметить посещение ДОД">
+      <Modal open={showDod} onClose={() => setShowDod(false)} title="Отметить посещение мероприятия">
         <div className="space-y-2">
           {dodEvents.length === 0 && <p className="text-xs text-slate-500">Мероприятий нет — создайте в разделе «ДОД»</p>}
           {dodEvents.map(d => {
-            const attended = contact.touchpoints?.some((t: any) => t.type === 'dod' && t.dod_event_id === d.id);
+            const attended = contact.touchpoints?.some((t: any) => t.dod_event_id === d.id && ['dod', 'school', 'external'].includes(t.type));
             return (
               <div key={d.id} className="flex items-center gap-3 glass rounded-xl px-3.5 py-2.5">
                 <GraduationCap size={18} className="text-violet-400 shrink-0" />
