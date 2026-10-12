@@ -24,6 +24,7 @@ import { importRouter } from './routes/import.routes.js';
 import { exportRouter } from './routes/export.routes.js';
 import { adminRouter } from './routes/admin.routes.js';
 import { backupRouter } from './routes/backup.routes.js';
+import { chatRouter } from './routes/chat.routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -114,6 +115,7 @@ app.use('/api/import', importRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/backup', backupRouter);
+app.use('/api/chat', chatRouter);
 
 // 404 для API
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API endpoint не найден' }));

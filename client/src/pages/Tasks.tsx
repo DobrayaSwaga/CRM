@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckSquare, Plus, Download, Zap, Check, Clock, AlertTriangle, User } from 'lucide-react';
+import { CheckSquare, Plus, Download, Zap, Check, Clock, AlertTriangle, User, Pencil, Trash2 } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { Card, Button, Input, Select, Textarea, Spinner, EmptyState, Modal, Field, Badge } from '../components/ui';
@@ -31,6 +31,7 @@ export default function Tasks() {
   const [filter, setFilter] = useState({ status: searchParams.get('overdue') === '1' ? '' : 'open', assignee_id: '', overdue: searchParams.get('overdue') || '', mine: '' });
   const [showCreate, setShowCreate] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [editTask, setEditTask] = useState<any | null>(null);
   const [form, setForm] = useState<any>({ title: '', description: '', due_date: '', priority: 'normal', assignee_id: '' });
   const [bulkForm, setBulkForm] = useState<any>({ title: '', template_id: '', due_date: '', priority: 'normal', assignee_id: '', filters: {} as any });
   const [err, setErr] = useState('');
@@ -158,7 +159,8 @@ export default function Tasks() {
                         {t.last_name} {t.first_name}
                       </Link>
                     )}
-                    {t.assignee_name && <span>{t.assignee_name}</span>}
+                    {t.assignee_name && <span>исполнитель: <b className="text-slate-400 font-medium">{t.assignee_name}</b></span>}
+                    {t.created_by_name && t.created_by_name !== t.assignee_name && <span>от {t.created_by_name}</span>}
                     {t.due_date && (
                       <span className={`flex items-center gap-1 ${isOverdue(t) ? 'text-red-400 font-semibold' : ''}`}>
                         <Clock size={10} /> {fmtDate(t.due_date)}
@@ -168,6 +170,20 @@ export default function Tasks() {
                   </div>
                 </div>
                 <Badge color={PRIORITY[t.priority]?.color}>{PRIORITY[t.priority]?.label}</Badge>
+                {hasPerm('tasks.edit') && (
+                  <button
+                    title="Редактировать / переназначить"
+                    onClick={() => setEditTask({ ...t, due_date_local: t.due_date ? t.due_date.slice(0, 16) : '' })}
+                    className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
+                  ><Pencil size={13} /></button>
+                )}
+                {hasPerm('tasks.delete') && (
+                  <button
+                    title="Удалить задачу"
+                    onClick={async () => { if (confirm('Удалить задачу?')) { await api.del(`/api/tasks/${t.id}`); load(); } }}
+                    className="text-slate-600 hover:text-red-400 transition-colors shrink-0"
+                  ><Trash2 size={13} /></button>
+                )}
               </div>
             </Card>
           ))}
@@ -201,6 +217,46 @@ export default function Tasks() {
             <Button variant="primary" onClick={createTask} disabled={!form.title.trim()}>Создать</Button>
           </div>
         </div>
+      </Modal>
+
+      {/* Редактирование / переназначение */}
+      <Modal open={!!editTask} onClose={() => setEditTask(null)} title="Редактировать задачу">
+        {editTask && (
+          <div className="space-y-3">
+            <Field label="Задача"><Input value={editTask.title} onChange={e => setEditTask((t: any) => ({ ...t, title: e.target.value }))} /></Field>
+            <Field label="Описание"><Textarea rows={2} value={editTask.description || ''} onChange={e => setEditTask((t: any) => ({ ...t, description: e.target.value }))} /></Field>
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="Дедлайн"><Input type="datetime-local" value={editTask.due_date_local} onChange={e => setEditTask((t: any) => ({ ...t, due_date_local: e.target.value }))} /></Field>
+              <Field label="Приоритет">
+                <Select value={editTask.priority} onChange={e => setEditTask((t: any) => ({ ...t, priority: e.target.value }))}>
+                  <option value="low">Низкий</option>
+                  <option value="normal">Обычный</option>
+                  <option value="high">Высокий</option>
+                </Select>
+              </Field>
+              <Field label="Исполнитель">
+                <Select value={editTask.assignee_id || ''} onChange={e => setEditTask((t: any) => ({ ...t, assignee_id: e.target.value }))}>
+                  <option value="">Без исполнителя</option>
+                  {assignees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </Select>
+              </Field>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setEditTask(null)}>Отмена</Button>
+              <Button variant="primary" onClick={async () => {
+                await api.patch(`/api/tasks/${editTask.id}`, {
+                  title: editTask.title,
+                  description: editTask.description,
+                  priority: editTask.priority,
+                  due_date: editTask.due_date_local || null,
+                  assignee_id: editTask.assignee_id ? Number(editTask.assignee_id) : null,
+                });
+                setEditTask(null);
+                load();
+              }} disabled={!String(editTask.title).trim()}>Сохранить</Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Массовая постановка */}

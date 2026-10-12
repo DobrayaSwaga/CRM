@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import {
   LayoutDashboard, Users, Columns3, CheckSquare, CalendarDays,
   GraduationCap, Upload, GitMerge, BarChart3, Settings, LogOut,
-  Search, ChevronRight, Sun, Moon
+  Search, ChevronRight, Sun, Moon, MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../auth';
 import { api } from '../api';
@@ -16,6 +16,7 @@ const NAV = [
   { to: '/contacts', icon: Users, label: 'Контакты' },
   { to: '/kanban', icon: Columns3, label: 'Воронка' },
   { to: '/tasks', icon: CheckSquare, label: 'Задачи' },
+  { to: '/chat', icon: MessageSquare, label: 'Чат', chatBadge: true },
   { to: '/calendar', icon: CalendarDays, label: 'Календарь' },
   { to: '/dod', icon: GraduationCap, label: 'ДОД' },
   { to: '/import', icon: Upload, label: 'Импорт', perm: 'import.run' },
@@ -41,12 +42,17 @@ export default function Layout() {
   const navigate = useNavigate();
   const [globalSearch, setGlobalSearch] = useState('');
   const [dupCount, setDupCount] = useState(0);
+  const [chatUnread, setChatUnread] = useState(0);
   const { theme, toggle } = useTheme();
 
   useEffect(() => {
     if (hasPerm('import.merge')) {
       api.get('/api/import/duplicates').then(d => setDupCount(d.candidates.length)).catch(() => {});
     }
+    const loadUnread = () => api.get('/api/chat/unread').then(d => setChatUnread(d.unread)).catch(() => {});
+    loadUnread();
+    const t = setInterval(loadUnread, 15000);
+    return () => clearInterval(t);
   }, []);
 
   const onSearchKey = (e: React.KeyboardEvent) => {
@@ -95,6 +101,11 @@ export default function Layout() {
               {n.badge && dupCount > 0 && (
                 <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-400/30 rounded-md px-1.5 py-px font-semibold">
                   {dupCount}
+                </span>
+              )}
+              {n.chatBadge && chatUnread > 0 && (
+                <span className="text-[10px] bg-indigo-500/25 text-indigo-200 border border-indigo-400/40 rounded-md px-1.5 py-px font-semibold">
+                  {chatUnread}
                 </span>
               )}
             </NavLink>

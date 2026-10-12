@@ -115,6 +115,7 @@ export default function Kanban() {
                         </div>
                       </Link>
                       {c.phone && <div className="text-[11px] text-slate-500 mt-1">{c.phone}</div>}
+                      {c.owner_name && <div className="text-[10px] text-slate-600 mt-0.5 truncate" title={`Ответственный: ${c.owner_name}`}>↳ {c.owner_name}</div>}
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex gap-1 flex-wrap">
                           {(c.programs || []).slice(0, 1).map((p: any) => <Badge key={p.id} color={p.color} className="!text-[9px] !px-1.5">{p.name}</Badge>)}

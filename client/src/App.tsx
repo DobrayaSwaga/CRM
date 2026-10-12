@@ -16,6 +16,7 @@ import ImportPage from './pages/Import';
 import Duplicates from './pages/Duplicates';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Chat from './pages/Chat';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ export default function App() {
             <Route path="import" element={<ImportPage />} />
             <Route path="duplicates" element={<Duplicates />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="chat" element={<Chat />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

@@ -200,6 +200,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
   details TEXT DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Внутренний чат сотрудников: обычные сообщения, объявления и постановка задач
+CREATE TABLE IF NOT EXISTS messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL DEFAULT 'chat', -- chat | announcement | task
+  body TEXT NOT NULL,
+  task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(id);
+
+-- На каком сообщении остановился каждый пользователь (для счётчика непрочитанных)
+CREATE TABLE IF NOT EXISTS chat_read_state (
+  user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_read_id INTEGER NOT NULL DEFAULT 0
+);
 `);
 
 // ---------- Seeds ----------
