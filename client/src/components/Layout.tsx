@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../auth';
 import { api } from '../api';
 import RemindersBell from './RemindersBell';
+import ChatToaster from './ChatToaster';
 import EyeLogo from './EyeLogo';
 
 const NAV = [
@@ -159,6 +160,9 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Всплывающие уведомления чата (на любой странице, кроме самого чата) */}
+      <ChatToaster />
     </div>
   );
 }
