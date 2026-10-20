@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CheckSquare, Plus, Download, Zap, Check, Clock, AlertTriangle, User, Pencil, Trash2 } from 'lucide-react';

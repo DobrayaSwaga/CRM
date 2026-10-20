@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 export const TEMP_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
   hot: { label: 'Горячий', color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.35)' },
   warm: { label: 'Тёплый', color: '#fbbf24', bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.3)' },

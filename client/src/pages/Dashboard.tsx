@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Users, Flame, Sun, Snowflake, CheckSquare, GraduationCap, AlertTriangle, TrendingUp, ArrowRight } from 'lucide-react';

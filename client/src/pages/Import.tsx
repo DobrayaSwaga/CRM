@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Check, AlertTriangle, History, GitMerge, GraduationCap, CalendarRange } from 'lucide-react';

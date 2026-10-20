@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { db } from './db.js';
 
 export function attachUser(req, _res, next) {

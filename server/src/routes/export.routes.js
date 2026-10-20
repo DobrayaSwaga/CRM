@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { Router } from 'express';
 import xlsx from 'xlsx';
 import { db } from '../db.js';

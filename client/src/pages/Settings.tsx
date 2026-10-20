@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useEffect, useState } from 'react';
 import { Users, ShieldCheck, SlidersHorizontal, ListTree, Flame, KeyRound, ScrollText, Plus, Trash2, Pencil, Check, X, DatabaseBackup, Download, Upload, Camera, AlertTriangle } from 'lucide-react';
 import { api } from '../api';

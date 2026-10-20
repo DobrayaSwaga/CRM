@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useEffect, useState } from 'react';
 import { GitMerge, Check, X, AlertTriangle, ArrowRight } from 'lucide-react';
 import { api } from '../api';

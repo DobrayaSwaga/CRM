@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import path from 'node:path';
 import fs from 'node:fs';
 import { db, refreshSearchText } from './db.js';

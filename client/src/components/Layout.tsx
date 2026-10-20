@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import React, { useEffect, useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
@@ -126,6 +127,9 @@ export default function Layout() {
               <LogOut size={15} />
             </button>
           </div>
+        </div>
+        <div className="px-4 py-2.5 border-t border-white/5 text-[10px] text-slate-600 leading-snug">
+          NexusCRM © 2026 · разработка <span className="text-slate-400">DobrayaSwaga</span>
         </div>
       </aside>
 

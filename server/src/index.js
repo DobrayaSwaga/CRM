@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 // Первой строкой подключаем загрузку .env — остальные модули уже увидят переменные окружения
 import './env.js';
 import express from 'express';

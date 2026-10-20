@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { db, PERMISSIONS } from '../db.js';

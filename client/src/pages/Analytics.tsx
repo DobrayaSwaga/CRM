@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useEffect, useState } from 'react';
 import { BarChart3, Download, TrendingUp, Users, Target, Award } from 'lucide-react';
 import { api } from '../api';

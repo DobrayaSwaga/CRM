@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';

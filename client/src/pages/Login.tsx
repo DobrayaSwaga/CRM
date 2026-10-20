@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useState } from 'react';
 import { LogIn, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../auth';
@@ -77,6 +78,9 @@ export default function Login() {
             {busy ? 'Входим…' : 'Войти'}
           </Button>
         </form>
+        <div className="mt-6 text-center text-[11px] text-slate-600">
+          NexusCRM © 2026 · разработка DobrayaSwaga
+        </div>
       </div>
     </div>
   );

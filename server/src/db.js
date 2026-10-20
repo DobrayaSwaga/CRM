@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';

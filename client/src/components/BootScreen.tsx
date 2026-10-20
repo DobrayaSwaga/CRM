@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import EyeLogo from './EyeLogo';
 

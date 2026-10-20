@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import React from 'react';
 import clsx from 'clsx';
 import { X } from 'lucide-react';

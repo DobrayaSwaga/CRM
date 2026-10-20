@@ -1,3 +1,4 @@
+// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { api } from './api';
 
