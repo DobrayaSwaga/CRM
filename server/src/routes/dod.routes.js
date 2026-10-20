@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { db } from '../db.js';
-import { requireAuth, requirePerm } from '../auth.js';
+import { isLimitedViewer, requireAuth, requirePerm } from '../auth.js';
 import { audit, recalcScore, EVENT_TYPES, normEventType, visitTypeOf, registrationTypeOf } from '../util.js';
 import { importEventPlanFromBuffer } from '../plan-import.js';
 
@@ -49,6 +49,10 @@ dodRouter.get('/:id', requireAuth, (req, res) => {
       AND c.id NOT IN (SELECT contact_id FROM touchpoints WHERE dod_event_id = ? AND type = ?)
     ORDER BY c.last_name
   `).all(id, rt, id, vt);
+  // Наблюдателю не показываем телефоны и почты участников
+  if (isLimitedViewer(req)) {
+    for (const a of [...event.attendees, ...event.registrations]) { a.phone = ''; a.email = ''; }
+  }
   res.json({ event });
 });
 

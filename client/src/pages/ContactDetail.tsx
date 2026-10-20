@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, Phone, Mail, MapPin, School, Calendar, Pencil, Trash2,
   Plus, Flame, AlertTriangle, CheckSquare, GraduationCap, Sparkles,
-  Award, Archive, Snowflake, Clock, Paperclip, FileText, Download, X, Users
+  Award, Archive, Snowflake, Clock, Paperclip, FileText, Download, X, Users, Link2, Search
 } from 'lucide-react';
 import { api } from '../api';
 import { useAuth } from '../auth';
@@ -186,11 +186,17 @@ export default function ContactDetail() {
   const navigate = useNavigate();
   const { hasPerm, user } = useAuth();
   const [contact, setContact] = useState<any>(null);
+  const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showEdit, setShowEdit] = useState(false);
   const [showTouchpoint, setShowTouchpoint] = useState(false);
   const [showTask, setShowTask] = useState(false);
   const [showDod, setShowDod] = useState(false);
+  const [showRelations, setShowRelations] = useState(false);
+  const [suggestions, setSuggestions] = useState<any[] | null>(null);
+  const [suggFor, setSuggFor] = useState(0);
+  const [relSearch, setRelSearch] = useState('');
+  const [relResults, setRelResults] = useState<any[]>([]);
   const [dodEvents, setDodEvents] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<any[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -201,7 +207,7 @@ export default function ContactDetail() {
 
   const load = useCallback(() => {
     api.get(`/api/contacts/${id}`).then(d => { setContact(d.contact); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch((e) => { setForbidden(e?.status === 403); setLoading(false); });
   }, [id]);
 
   useEffect(() => {
@@ -212,6 +218,13 @@ export default function ContactDetail() {
   }, [load]);
 
   if (loading) return <Spinner />;
+  if (forbidden) return (
+    <EmptyState
+      icon={<AlertTriangle size={40} />}
+      title="Личная карточка недоступна"
+      hint="В режиме наблюдателя видны только ФИО в списках и общая статистика. За доступом к карточкам обратитесь к администратору."
+    />
+  );
   if (!contact) return <EmptyState icon={<AlertTriangle size={40} />} title="Контакт не найден" />;
 
   const fio = [contact.last_name, contact.first_name, contact.middle_name].filter(Boolean).join(' ');
@@ -237,6 +250,37 @@ export default function ContactDetail() {
   const remove = async () => {
     await api.del(`/api/contacts/${id}`);
     navigate('/contacts');
+  };
+
+  // --- Семья и связи ---
+  const openRelations = () => {
+    setShowRelations(true);
+    setSuggestions(null);
+    setSuggFor(0);
+    setRelSearch('');
+    setRelResults([]);
+    api.get(`/api/contacts/${contact.id}/relation-suggestions`)
+      .then(d => { setSuggestions(d.suggestions); setSuggFor(contact.id); })
+      .catch(() => setSuggestions([]));
+  };
+  const linkRelation = async (relatedId: number) => {
+    try {
+      await api.post(`/api/contacts/${contact.id}/relations`, { related_id: relatedId });
+      load();
+      openRelations(); // обновляем кандидатов в открытой модалке
+    } catch (e: any) { setErr(e.message); }
+  };
+  const unlinkRelation = async (relId: number) => {
+    await api.del(`/api/contacts/relations/${relId}`).catch(() => {});
+    load();
+  };
+  const searchRelations = async (qstr: string) => {
+    setRelSearch(qstr);
+    if (qstr.trim().length < 2) { setRelResults([]); return; }
+    try {
+      const d = await api.get(`/api/contacts?search=${encodeURIComponent(qstr.trim())}&per_page=8`);
+      setRelResults(d.contacts.filter((c: any) => c.id !== contact.id && !(contact.relations || []).some((r: any) => r.id === c.id)));
+    } catch { setRelResults([]); }
   };
 
   return (
@@ -281,19 +325,13 @@ export default function ContactDetail() {
 
             {/* Быстрые действия */}
             {hasPerm('dod.manage') && (
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              <div className="mt-4 grid grid-cols-1 gap-2">
                 <button
                   onClick={() => setShowDod(true)}
                   className="flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-xl bg-violet-500/15 border border-violet-400/30 text-violet-300 hover:bg-violet-500/25 transition-all"
                 >
                   Отметить ДОД
                 </button>
-                <a
-                  href={contact.phone ? `tel:${contact.phone}` : undefined}
-                  className={`flex items-center justify-center gap-1.5 text-xs font-medium py-2 rounded-xl border transition-all ${contact.phone ? 'bg-blue-500/12 border-blue-400/30 text-blue-300 hover:bg-blue-500/22' : 'bg-white/3 border-white/8 text-slate-600 pointer-events-none'}`}
-                >
-                  Позвонить
-                </a>
               </div>
             )}
 
@@ -318,12 +356,6 @@ export default function ContactDetail() {
             </div>
 
             <div className="mt-4 space-y-2 text-sm">
-              {contact.phone && <div className="flex items-center gap-2.5 text-slate-300"><Phone size={14} className="text-slate-500" /> {contact.phone}</div>}
-              {contact.email && <div className="flex items-center gap-2.5 text-slate-300"><Mail size={14} className="text-slate-500" /> {contact.email}</div>}
-              {contact.city && <div className="flex items-center gap-2.5 text-slate-300"><MapPin size={14} className="text-slate-500" /> {contact.city}</div>}
-              {contact.school && <div className="flex items-center gap-2.5 text-slate-300"><School size={14} className="text-slate-500" /> {contact.school}</div>}
-              {contact.grade && <div className="flex items-center gap-2.5 text-slate-300"><GraduationCap size={14} className="text-slate-500" /> {contact.grade}</div>}
-              {contact.birth_date && <div className="flex items-center gap-2.5 text-slate-300"><Calendar size={14} className="text-slate-500" /> {new Date(contact.birth_date).toLocaleDateString('ru-RU')}</div>}
               {(() => {
                 const ri = resolveRole(contact);
                 const meta = ROLE_META[ri.role];
@@ -353,6 +385,13 @@ export default function ContactDetail() {
                   </select>
                 </div>
               )}
+              {contact.phone && <div className="flex items-center gap-2.5 text-slate-300"><Phone size={14} className="text-slate-500" /> {contact.phone}</div>}
+              {contact.email && <div className="flex items-center gap-2.5 text-slate-300"><Mail size={14} className="text-slate-500" /> {contact.email}</div>}
+              {contact.city && <div className="flex items-center gap-2.5 text-slate-300"><MapPin size={14} className="text-slate-500" /> {contact.city}</div>}
+              {contact.school && <div className="flex items-center gap-2.5 text-slate-300"><School size={14} className="text-slate-500" /> {contact.school}</div>}
+              {contact.grade && <div className="flex items-center gap-2.5 text-slate-300"><GraduationCap size={14} className="text-slate-500" /> {contact.grade}</div>}
+              {contact.birth_date && <div className="flex items-center gap-2.5 text-slate-300"><Calendar size={14} className="text-slate-500" /> {new Date(contact.birth_date).toLocaleDateString('ru-RU')}</div>}
+
             </div>
 
             {(contact.source || contact.ege_score || contact.owner_name) && (
@@ -398,6 +437,46 @@ export default function ContactDetail() {
               )}
             </Card>
           )}
+
+          {/* Семья и связи: родитель ↔ ребёнок */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs text-slate-500 flex items-center gap-1.5"><Link2 size={11} /> Семья и связи ({contact.relations?.length || 0})</div>
+              {hasPerm('contacts.edit') && (
+                <button onClick={openRelations} className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                  <Plus size={11} /> привязать
+                </button>
+              )}
+            </div>
+            {(contact.relations || []).length === 0 ? (
+              <p className="text-xs text-slate-600">Связей нет. Нажмите «привязать» — система подскажет похожих по фамилии, телефону и возрасту.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {contact.relations.map((r: any) => {
+                  const rr = resolveRole(r);
+                  const rmeta = ROLE_META[rr.role];
+                  return (
+                    <div key={r.rel_id} className="flex items-center gap-2 text-xs group">
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: rmeta.color }} />
+                      <Link to={`/contacts/${r.id}`} className="text-slate-200 hover:text-indigo-300 font-medium truncate transition-colors">
+                        {r.last_name} {r.first_name} {r.middle_name}
+                      </Link>
+                      <span className="text-[10px] shrink-0" style={{ color: rmeta.color }}>
+                        {rmeta.label}{rr.age !== null ? ` · ${rr.age}` : ''}
+                      </span>
+                      {hasPerm('contacts.edit') && (
+                        <button
+                          onClick={() => unlinkRelation(r.rel_id)}
+                          title="Убрать связь"
+                          className="ml-auto text-slate-700 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                        ><X size={11} /></button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
 
           {/* Кастомные поля */}
           {contact.custom_values?.filter((cv: any) => cv.value).length > 0 && (
@@ -501,6 +580,68 @@ export default function ContactDetail() {
       </div>
 
       {/* Модалки */}
+      <Modal open={showRelations} onClose={() => setShowRelations(false)} title="Привязать родственника" width="max-w-lg">
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Система сама предлагает кандидатов: то же ФИО-семейство, телефон, школа/город и подходящий возраст
+            (школьник ↔ родитель). Проверьте перед привязкой.
+          </p>
+
+          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">Предположения системы</div>
+          {suggestions === null ? (
+            <Spinner />
+          ) : suggestions.length === 0 ? (
+            <p className="text-xs text-slate-600">Автоматических кандидатов не нашлось — воспользуйтесь поиском ниже.</p>
+          ) : (
+            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+              {suggestions.map((c: any) => {
+                const rr = resolveRole(c);
+                const rmeta = ROLE_META[rr.role];
+                return (
+                  <div key={c.id} className="glass rounded-xl px-3 py-2 flex items-center gap-2.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-slate-200 truncate">{c.last_name} {c.first_name} {c.middle_name}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                        <span style={{ color: rmeta.color }}>{rmeta.label}{rr.age !== null ? ` · ${rr.age}` : ''}</span>
+                        {c.reasons.slice(0, 2).map((r: string) => <span key={r} className="text-slate-600">· {r}</span>)}
+                      </div>
+                    </div>
+                    <Button size="sm" variant="default" onClick={() => linkRelation(c.id)}><Link2 size={11} /> Привязать</Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide pt-1">Найти вручную</div>
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={relSearch}
+              onChange={e => searchRelations(e.target.value)}
+              placeholder="Фамилия или телефон…"
+              className="w-full bg-white/4 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-400/50 placeholder:text-slate-600"
+            />
+          </div>
+          {relResults.length > 0 && (
+            <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+              {relResults.map((c: any) => (
+                <div key={c.id} className="glass rounded-xl px-3 py-2 flex items-center gap-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-slate-200 truncate">{c.last_name} {c.first_name} {c.middle_name}</div>
+                    <div className="text-[10px] text-slate-600 mt-0.5">{c.phone || 'без телефона'}</div>
+                  </div>
+                  <Button size="sm" variant="default" onClick={() => linkRelation(c.id)}><Link2 size={11} /> Привязать</Button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end">
+            <Button variant="ghost" onClick={() => setShowRelations(false)}>Готово</Button>
+          </div>
+        </div>
+      </Modal>
+
       <Modal open={showDod} onClose={() => setShowDod(false)} title="Отметить посещение мероприятия">
         <div className="space-y-2">
           {dodEvents.length === 0 && <p className="text-xs text-slate-500">Мероприятий нет — создайте в разделе «ДОД»</p>}

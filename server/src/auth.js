@@ -24,6 +24,15 @@ export function hasPerm(user, perm) {
   return user.permissions.includes('*') || user.permissions.includes(perm);
 }
 
+// «Наблюдатель»: может смотреть общую статистику и списки, но НЕ личные данные карточек.
+// Признак — есть право просмотра, но нет ни создания, ни редактирования контактов.
+export function isLimitedViewer(req) {
+  const u = req.user;
+  if (!u || u.permissions.includes('*')) return false;
+  const has = (p) => u.permissions.includes(p);
+  return has('contacts.view') && !has('contacts.create') && !has('contacts.edit');
+}
+
 export function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: 'Требуется вход в систему' });
   next();

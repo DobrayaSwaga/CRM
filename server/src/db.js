@@ -217,6 +217,18 @@ CREATE TABLE IF NOT EXISTS chat_read_state (
   user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   last_read_id INTEGER NOT NULL DEFAULT 0
 );
+
+-- Связи между контактами: родитель ↔ ребёнок (храним парами в обе стороны)
+CREATE TABLE IF NOT EXISTS contact_relations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  related_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  relation TEXT NOT NULL DEFAULT 'family', -- family
+  created_by INTEGER REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(contact_id, related_id)
+);
+CREATE INDEX IF NOT EXISTS idx_relations_contact ON contact_relations(contact_id);
 `);
 
 // ---------- Seeds ----------

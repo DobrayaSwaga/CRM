@@ -3,8 +3,8 @@ import multer from 'multer';
 import path from 'node:path';
 import fs from 'node:fs';
 import { db } from '../db.js';
-import { hasPerm, requirePerm } from '../auth.js';
-import { audit, normalizePhone, recalcScore, rowToContact, UPLOADS_DIR } from '../util.js';
+import { hasPerm, isLimitedViewer, requirePerm } from '../auth.js';
+import { audit, normalizePhone, recalcScore, resolveRole, rowToContact, UPLOADS_DIR } from '../util.js';
 
 export const contactsRouter = Router();
 
@@ -84,12 +84,37 @@ contactsRouter.get('/', requirePerm('contacts.view'), (req, res) => {
     ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?
   `).all(...params, perPage, (page - 1) * perPage);
 
-  const contacts = rows.map(r => ({ ...r, programs: db.prepare(
+  let contacts = rows.map(r => ({ ...r, programs: db.prepare(
     'SELECT p.id, p.name, p.color FROM programs p JOIN contact_programs cp ON cp.program_id = p.id WHERE cp.contact_id = ?'
   ).all(r.id) }));
 
+  // Наблюдателю — только ФИО и обобщённая рабочая информация, без личных данных
+  if (isLimitedViewer(req)) {
+    contacts = contacts.map(c => {
+      const role = resolveRole(c).role;
+      return {
+        id: c.id, last_name: c.last_name, first_name: c.first_name, middle_name: c.middle_name,
+        status_name: c.status_name, status_color: c.status_color,
+        temperature: c.temperature, score: c.score, owner_name: c.owner_name,
+        programs: c.programs,
+        // роль без возраста и даты рождения — метка «школьник/родитель» без цифр
+        contact_role: role === 'unknown' ? '' : role,
+        phone: '', phone_normalized: '', email: '', birth_date: '', city: '', school: '', grade: '',
+        source: '', ege_score: null, search_text: '', created_by: null, created_at: '', updated_at: '',
+        status_id: null, owner_id: null,
+      };
+    });
+  }
+
   res.json({ contacts, total, page, per_page: perPage, pages: Math.ceil(total / perPage) });
 });
+
+// Отказ для наблюдателя на карточку и всё, что внутри неё (личные данные)
+function denyLimited(req, res) {
+  if (!isLimitedViewer(req)) return false;
+  res.status(403).json({ error: 'Режим наблюдателя: доступны только ФИО и общая статистика' });
+  return true;
+}
 
 // ---------- Поиск возможных дублей (по всей базе) ----------
 contactsRouter.get('/duplicates', requirePerm('import.merge'), (_req, res) => {
@@ -145,6 +170,7 @@ contactsRouter.post('/merge', requirePerm('import.merge'), (req, res) => {
 
 // ---------- Карточка ----------
 contactsRouter.get('/:id', requirePerm('contacts.view'), (req, res) => {
+  if (denyLimited(req, res)) return;
   const id = Number(req.params.id);
   const row = db.prepare(`
     SELECT c.*, s.name AS status_name, s.color AS status_color, u.name AS owner_name, cu.name AS created_by_name
@@ -177,7 +203,99 @@ contactsRouter.get('/:id', requirePerm('contacts.view'), (req, res) => {
   `).all(id);
   // Посещения по типам мероприятий + пересечение «был и на ДОД, и в школе»
   contact.event_flags = eventFlags(id);
+  // Связанные контакты (родитель ↔ ребёнок)
+  contact.relations = db.prepare(`
+    SELECT r.id AS rel_id, r.relation, c.id, c.last_name, c.first_name, c.middle_name,
+           c.birth_date, c.contact_role, c.phone, c.temperature
+    FROM contact_relations r JOIN contacts c ON c.id = r.related_id
+    WHERE r.contact_id = ?
+  `).all(id);
   res.json({ contact });
+});
+
+// Кандидаты в связь: то же ФИО-семейство — совпадение телефона, фамилии+школы/города, зеркальная роль
+contactsRouter.get('/:id/relation-suggestions', requirePerm('contacts.view'), (req, res) => {
+  if (denyLimited(req, res)) return;
+  const id = Number(req.params.id);
+  const me = db.prepare('SELECT * FROM contacts WHERE id = ?').get(id);
+  if (!me) return res.status(404).json({ error: 'Контакт не найден' });
+  const myRole = resolveRole(me).role;
+  const linked = db.prepare('SELECT related_id FROM contact_relations WHERE contact_id = ?').all(id).map(r => r.related_id);
+  const linkedSet = new Set([id, ...linked]);
+
+  const candidates = new Map(); // id -> { contact, score, reasons[] }
+  const bump = (c, pts, reason) => {
+    if (linkedSet.has(c.id)) return;
+    const cur = candidates.get(c.id) || { contact: c, score: 0, reasons: [] };
+    cur.score += pts;
+    if (!cur.reasons.includes(reason)) cur.reasons.push(reason);
+    candidates.set(c.id, cur);
+  };
+
+  // 1) тот же телефон — почти наверняка родитель, указавший свой номер за ребёнка
+  if (me.phone_normalized) {
+    for (const c of db.prepare('SELECT * FROM contacts WHERE phone_normalized = ? AND id != ?').all(me.phone_normalized, id)) {
+      bump(c, 5, 'тот же телефон');
+    }
+  }
+  // 2) то же ФИО-семейство (учитываем окончания: Иванов ≈ Иванова ≈ Ивановская) + та же школа или город
+  if (me.last_name) {
+    // основа фамилии: срезаем одну букву окончания (минимум 3 символа в основе).
+    // SQLite lower() не складывает кириллицу — фильтруем средствами JS.
+    const rawLn = me.last_name.toLowerCase();
+    const stem = rawLn.replace(/[а-яёa-z]$/u, '');
+    const stemEff = stem.length >= 3 ? stem : rawLn;
+    const mySchool = (me.school || '').toLowerCase(); const myCity = (me.city || '').toLowerCase();
+    for (const c of db.prepare('SELECT * FROM contacts WHERE id != ?').all(id)) {
+      if (!(c.last_name || '').toLowerCase().startsWith(stemEff)) continue;
+      const cSchool = (c.school || '').toLowerCase(); const cCity = (c.city || '').toLowerCase();
+      if (mySchool && cSchool && mySchool === cSchool) bump(c, 3, 'фамилия и школа совпадают');
+      if (myCity && cCity && myCity === cCity) bump(c, 2, 'фамилия и город совпадают');
+      if (candidates.has(c.id) === false) bump(c, 1, 'та же фамилия');
+    }
+  }
+
+  // 3) бонус за зеркальную роль: школьник ↔ родитель/взрослый
+  const out = [...candidates.values()].map(x => {
+    const otherRole = resolveRole(x.contact).role;
+    const complement = (myRole === 'child' && ['parent', 'adult'].includes(otherRole)) ||
+                       (['parent', 'adult'].includes(myRole) && otherRole === 'child');
+    if (complement) {
+      x.score += 2;
+      x.reasons.push(otherRole === 'child' ? 'возраст подходит на ребёнка' : 'возраст подходит на родителя');
+    }
+    return {
+      id: x.contact.id,
+      last_name: x.contact.last_name, first_name: x.contact.first_name, middle_name: x.contact.middle_name,
+      birth_date: x.contact.birth_date, contact_role: x.contact.contact_role,
+      phone: x.contact.phone, school: x.contact.school, city: x.contact.city,
+      score: x.score, reasons: x.reasons, role: otherRole,
+    };
+  }).sort((a, b) => b.score - a.score).slice(0, 10);
+  res.json({ suggestions: out });
+});
+
+contactsRouter.post('/:id/relations', requirePerm('contacts.edit'), (req, res) => {
+  const id = Number(req.params.id);
+  const relatedId = Number(req.body?.related_id);
+  if (!relatedId) return res.status(400).json({ error: 'Укажите related_id' });
+  if (id === relatedId) return res.status(400).json({ error: 'Нельзя связать контакт с самим собой' });
+  const both = db.prepare('SELECT COUNT(*) c FROM contacts WHERE id IN (?,?)').get(id, relatedId).c;
+  if (both !== 2) return res.status(404).json({ error: 'Контакт не найден' });
+  // храним пару в обе стороны — один запрос на вывод связей
+  db.prepare("INSERT OR IGNORE INTO contact_relations (contact_id, related_id, relation, created_by) VALUES (?,?, 'family', ?)").run(id, relatedId, req.user.id);
+  db.prepare("INSERT OR IGNORE INTO contact_relations (contact_id, related_id, relation, created_by) VALUES (?,?, 'family', ?)").run(relatedId, id, req.user.id);
+  audit(req.user.id, 'contact.relation.create', 'contacts', id, { related_id: relatedId });
+  res.status(201).json({ ok: true });
+});
+
+contactsRouter.delete('/relations/:relId', requirePerm('contacts.edit'), (req, res) => {
+  const rel = db.prepare('SELECT * FROM contact_relations WHERE id = ?').get(Number(req.params.relId));
+  if (!rel) return res.status(404).json({ error: 'Связь не найдена' });
+  db.prepare('DELETE FROM contact_relations WHERE (contact_id = ? AND related_id = ?) OR (contact_id = ? AND related_id = ?)')
+    .run(rel.contact_id, rel.related_id, rel.related_id, rel.contact_id);
+  audit(req.user.id, 'contact.relation.delete', 'contacts', rel.contact_id, { related_id: rel.related_id });
+  res.json({ ok: true });
 });
 
 // Счётчики посещений по типам мероприятий для карточки и экспорта
@@ -229,6 +347,7 @@ contactsRouter.post('/bulk/delete', requirePerm('contacts.delete'), (req, res) =
 
 // ---------- Умная подсказка «следующее действие» ----------
 contactsRouter.get('/:id/next-action', requirePerm('contacts.view'), (req, res) => {
+  if (denyLimited(req, res)) return;
   const id = Number(req.params.id);
   const c = db.prepare(`
     SELECT c.*, s.is_final, s.is_success, s.name AS status_name
@@ -388,6 +507,7 @@ function decodeFileName(name) {
 }
 
 contactsRouter.get('/:id/documents', requirePerm('contacts.view'), (req, res) => {
+  if (denyLimited(req, res)) return;
   const id = Number(req.params.id);
   if (!db.prepare('SELECT id FROM contacts WHERE id = ?').get(id)) return res.status(404).json({ error: 'Контакт не найден' });
   const documents = db.prepare(`
@@ -419,6 +539,7 @@ contactsRouter.post('/:id/documents', requirePerm('contacts.edit'), docUpload.si
 });
 
 contactsRouter.get('/documents/:docId/download', requirePerm('contacts.view'), (req, res) => {
+  if (denyLimited(req, res)) return;
   const doc = db.prepare('SELECT * FROM contact_documents WHERE id = ?').get(Number(req.params.docId));
   if (!doc) return res.status(404).json({ error: 'Документ не найден' });
   const filePath = path.join(UPLOADS_DIR, path.basename(doc.filename));
