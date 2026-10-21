@@ -358,3 +358,23 @@ export function refreshSearchText(contactId) {
 const empty = db.prepare("SELECT id FROM contacts WHERE search_text = ''").all();
 for (const { id } of empty) refreshSearchText(id);
 
+
+// Calendar migration: existing CRM tasks remain shared; new personal tasks are explicit.
+if (!db.prepare('PRAGMA table_info(tasks)').all().some(c => c.name === 'scope')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN scope TEXT NOT NULL DEFAULT 'shared' CHECK (scope IN ('personal','shared'))");
+}
+db.exec(`
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  location TEXT NOT NULL DEFAULT '',
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  all_day INTEGER NOT NULL DEFAULT 0 CHECK (all_day IN (0,1)),
+  scope TEXT NOT NULL DEFAULT 'personal' CHECK (scope IN ('personal','shared')),
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_range ON calendar_events(start_at, end_at);
+`);

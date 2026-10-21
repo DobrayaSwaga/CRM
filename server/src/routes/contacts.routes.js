@@ -1,4 +1,5 @@
 // © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
+import { taskVisibility } from '../calendar-access.js';
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'node:path';
@@ -200,7 +201,7 @@ contactsRouter.get('/:id', requirePerm('contacts.view'), (req, res) => {
   contact.tasks = db.prepare(`
     SELECT t.*, u.name AS assignee_name FROM tasks t
     LEFT JOIN users u ON u.id = t.assignee_id
-    WHERE t.contact_id = ? ORDER BY t.status = 'open' DESC, t.due_date
+    WHERE t.contact_id = ? AND ${taskVisibility(req.user)} ORDER BY t.status = 'open' DESC, t.due_date
   `).all(id);
   // Посещения по типам мероприятий + пересечение «был и на ДОД, и в школе»
   contact.event_flags = eventFlags(id);
@@ -360,7 +361,7 @@ contactsRouter.get('/:id/next-action', requirePerm('contacts.view'), (req, res) 
   const dodCount = db.prepare("SELECT COUNT(*) c FROM touchpoints WHERE contact_id = ? AND type = 'dod'").get(id).c;
   const hasApp = db.prepare("SELECT id FROM touchpoints WHERE contact_id = ? AND type = 'application' LIMIT 1").get(id);
   const lastTp = db.prepare('SELECT event_date FROM touchpoints WHERE contact_id = ? ORDER BY event_date DESC LIMIT 1').get(id)?.event_date;
-  const openTasks = db.prepare("SELECT COUNT(*) c FROM tasks WHERE contact_id = ? AND status = 'open'").get(id).c;
+  const openTasks = db.prepare(`SELECT COUNT(*) c FROM tasks t WHERE contact_id = ? AND status = 'open' AND ${taskVisibility(req.user)}`).get(id).c;
   const futureDod = db.prepare("SELECT * FROM dod_events WHERE event_date >= datetime('now') ORDER BY event_date LIMIT 1").get();
   const ref = lastTp || c.created_at;
   const daysSilent = ref ? Math.floor((Date.now() - new Date(String(ref).replace(' ', 'T') + 'Z').getTime()) / 86400000) : 999;

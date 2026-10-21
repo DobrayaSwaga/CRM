@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import {
   LayoutDashboard, Users, Columns3, CheckSquare, CalendarDays,
   GraduationCap, Upload, GitMerge, BarChart3, Settings, LogOut,
-  Search, ChevronRight, Sun, Moon, MessageSquare
+  Search, ChevronRight, Sun, Moon, MessageSquare, Menu, X
 } from 'lucide-react';
 import { useAuth } from '../auth';
 import { api } from '../api';
@@ -42,6 +42,7 @@ function useTheme() {
 export default function Layout() {
   const { user, logout, hasPerm } = useAuth();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [dupCount, setDupCount] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
@@ -74,9 +75,11 @@ export default function Layout() {
       </div>
 
       {/* Сайдбар */}
-      <aside className="w-[230px] shrink-0 flex flex-col m-3 mr-0 glass rounded-2xl overflow-hidden">
+      {menuOpen && <button aria-label="Закрыть меню" className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setMenuOpen(false)} />}
+      <aside className={clsx('w-[230px] shrink-0 flex-col m-3 mr-0 glass rounded-2xl overflow-hidden fixed inset-y-0 left-0 z-40 md:static md:flex', menuOpen ? 'flex' : 'hidden')}>
         <div className="px-5 py-5 border-b border-white/8">
           <div className="flex items-center gap-2.5">
+            <button aria-label="Скрыть меню" className="md:hidden absolute right-2 top-2 p-1" onClick={() => setMenuOpen(false)}><X size={16} /></button>
             <EyeLogo size={38} className="shrink-0" />
             <div>
               <div className="font-bold text-[15px] glow-text leading-tight">NexusCRM</div>
@@ -90,6 +93,7 @@ export default function Layout() {
             <NavLink
               key={n.to}
               to={n.to}
+              onClick={() => setMenuOpen(false)}
               end={n.end}
               className={({ isActive }) => clsx(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200 group relative',
@@ -135,7 +139,8 @@ export default function Layout() {
 
       {/* Основная область */}
       <div className="flex-1 flex flex-col min-w-0 p-3 gap-3">
-        <header className="glass rounded-2xl px-5 py-3 flex items-center gap-4 shrink-0">
+        <header className="glass rounded-2xl px-3 sm:px-5 py-3 flex items-center gap-2 sm:gap-4 shrink-0">
+          <button aria-label="Открыть меню" aria-expanded={menuOpen} className="md:hidden p-1 shrink-0" onClick={() => setMenuOpen(v => !v)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
           <div className="relative flex-1 max-w-md">
             <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
             <input

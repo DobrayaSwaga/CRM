@@ -33,8 +33,8 @@ export default function Tasks() {
   const [showCreate, setShowCreate] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
   const [editTask, setEditTask] = useState<any | null>(null);
-  const [form, setForm] = useState<any>({ title: '', description: '', due_date: '', priority: 'normal', assignee_id: '' });
-  const [bulkForm, setBulkForm] = useState<any>({ title: '', template_id: '', due_date: '', priority: 'normal', assignee_id: '', filters: {} as any });
+  const [form, setForm] = useState<any>({ title: '', description: '', due_date: '', priority: 'normal', scope: 'shared', assignee_id: '' });
+  const [bulkForm, setBulkForm] = useState<any>({ title: '', template_id: '', due_date: '', priority: 'normal', scope: 'shared', assignee_id: '', filters: {} as any });
   const [err, setErr] = useState('');
   const [bulkResult, setBulkResult] = useState('');
 
@@ -56,7 +56,7 @@ export default function Tasks() {
     try {
       await api.post('/api/tasks', { ...form, assignee_id: form.assignee_id ? Number(form.assignee_id) : undefined });
       setShowCreate(false);
-      setForm({ title: '', description: '', due_date: '', priority: 'normal', assignee_id: '' });
+      setForm({ title: '', description: '', due_date: '', priority: 'normal', scope: 'shared', assignee_id: '' });
       load();
     } catch (e: any) { setErr(e.message); }
   };
@@ -67,7 +67,7 @@ export default function Tasks() {
       const filters: any = {};
       Object.entries(bulkForm.filters).forEach(([k, v]) => { if (v) filters[k] = v; });
       const res = await api.post('/api/tasks/bulk', {
-        title: bulkForm.title, due_date: bulkForm.due_date || undefined, priority: bulkForm.priority,
+        title: bulkForm.title, due_date: bulkForm.due_date || undefined, priority: bulkForm.priority, scope: bulkForm.scope,
         assignee_id: bulkForm.assignee_id ? Number(bulkForm.assignee_id) : undefined, filters,
       });
       setBulkResult(`Создано задач: ${res.created}`);
@@ -76,8 +76,7 @@ export default function Tasks() {
   };
 
   const setTaskStatus = async (id: number, status: string) => {
-    await api.patch(`/api/tasks/${id}`, { status });
-    load();
+    try { await api.patch(`/api/tasks/${id}`, { status }); load(); } catch (e: any) { setErr(e.message); }
   };
 
   const isOverdue = (t: any) => t.status === 'open' && t.due_date && t.due_date < new Date().toISOString();
@@ -102,6 +101,7 @@ export default function Tasks() {
         )}
       </PageHeader>
 
+      {err && !showCreate && !editTask && !showBulk && <p role="alert" className="text-red-400 mb-3">{err}</p>}
       <Card className="p-3 mb-3 flex flex-wrap items-center gap-2">
         {[
           { k: '', label: 'Все' },
@@ -143,7 +143,7 @@ export default function Tasks() {
             <Card key={t.id} className="p-3.5 animate-slide-up" hover>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => hasPerm('tasks.edit') && setTaskStatus(t.id, t.status === 'done' ? 'open' : 'done')}
+                  disabled={!(user?.permissions.includes('*') || t.created_by === user?.id || t.assignee_id === user?.id)} onClick={() => setTaskStatus(t.id, t.status === 'done' ? 'open' : 'done')}
                   className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all ${
                     t.status === 'done' ? 'bg-emerald-500/30 border-emerald-400 text-emerald-300' : 'border-white/20 hover:border-emerald-400/60 text-transparent hover:text-emerald-400/50'
                   }`}
@@ -170,18 +170,19 @@ export default function Tasks() {
                     )}
                   </div>
                 </div>
+                <Badge color={t.scope === 'personal' ? '#a78bfa' : '#60a5fa'}>{t.scope === 'personal' ? 'Личная' : 'Общая'}</Badge>
                 <Badge color={PRIORITY[t.priority]?.color}>{PRIORITY[t.priority]?.label}</Badge>
-                {hasPerm('tasks.edit') && (
+                {(user?.permissions.includes('*') || t.created_by === user?.id || t.assignee_id === user?.id) && (
                   <button
                     title="Редактировать / переназначить"
-                    onClick={() => setEditTask({ ...t, due_date_local: t.due_date ? t.due_date.slice(0, 16) : '' })}
+                    onClick={() => { setErr(''); setEditTask({ ...t, due_date_local: t.due_date ? t.due_date.replace(' ', 'T').slice(0, 16) : '' }); }}
                     className="text-slate-600 hover:text-slate-300 transition-colors shrink-0"
                   ><Pencil size={13} /></button>
                 )}
-                {hasPerm('tasks.delete') && (
+                {(user?.permissions.includes('*') || t.created_by === user?.id || t.assignee_id === user?.id) && (
                   <button
                     title="Удалить задачу"
-                    onClick={async () => { if (confirm('Удалить задачу?')) { await api.del(`/api/tasks/${t.id}`); load(); } }}
+                    onClick={async () => { if (confirm('Удалить задачу?')) { try { await api.del(`/api/tasks/${t.id}`); load(); } catch (e: any) { setErr(e.message); } } }}
                     className="text-slate-600 hover:text-red-400 transition-colors shrink-0"
                   ><Trash2 size={13} /></button>
                 )}
@@ -197,8 +198,9 @@ export default function Tasks() {
           {err && <div className="text-red-300 text-xs bg-red-500/10 border border-red-400/25 rounded-xl px-3 py-2">{err}</div>}
           <Field label="Задача"><Input autoFocus value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="Например: Проверить заявки с ДОД" /></Field>
           <Field label="Описание"><Textarea rows={2} value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} /></Field>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Field label="Дедлайн"><Input type="datetime-local" value={form.due_date} onChange={e => setForm((f: any) => ({ ...f, due_date: e.target.value }))} /></Field>
+            <Field label="Календарь"><Select value={form.scope || 'shared'} onChange={e => setForm((f: any) => ({ ...f, scope: e.target.value }))}><option value="personal">Личный</option><option value="shared">Общий</option></Select></Field>
             <Field label="Приоритет">
               <Select value={form.priority} onChange={e => setForm((f: any) => ({ ...f, priority: e.target.value }))}>
                 <option value="low">Низкий</option>
@@ -224,11 +226,13 @@ export default function Tasks() {
       <Modal open={!!editTask} onClose={() => setEditTask(null)} title="Редактировать задачу">
         {editTask && (
           <div className="space-y-3">
+            {err && <p role="alert" className="text-red-400 text-sm">{err}</p>}
             <Field label="Задача"><Input value={editTask.title} onChange={e => setEditTask((t: any) => ({ ...t, title: e.target.value }))} /></Field>
             <Field label="Описание"><Textarea rows={2} value={editTask.description || ''} onChange={e => setEditTask((t: any) => ({ ...t, description: e.target.value }))} /></Field>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Field label="Дедлайн"><Input type="datetime-local" value={editTask.due_date_local} onChange={e => setEditTask((t: any) => ({ ...t, due_date_local: e.target.value }))} /></Field>
-              <Field label="Приоритет">
+              <Field label="Календарь"><Select value={editTask.scope || 'shared'} onChange={e => setEditTask((f: any) => ({ ...f, scope: e.target.value }))}><option value="personal">Личный</option><option value="shared">Общий</option></Select></Field>
+            <Field label="Приоритет">
                 <Select value={editTask.priority} onChange={e => setEditTask((t: any) => ({ ...t, priority: e.target.value }))}>
                   <option value="low">Низкий</option>
                   <option value="normal">Обычный</option>
@@ -245,15 +249,15 @@ export default function Tasks() {
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setEditTask(null)}>Отмена</Button>
               <Button variant="primary" onClick={async () => {
-                await api.patch(`/api/tasks/${editTask.id}`, {
+                try { await api.patch(`/api/tasks/${editTask.id}`, {
                   title: editTask.title,
                   description: editTask.description,
-                  priority: editTask.priority,
+                  priority: editTask.priority, scope: editTask.scope,
                   due_date: editTask.due_date_local || null,
                   assignee_id: editTask.assignee_id ? Number(editTask.assignee_id) : null,
                 });
                 setEditTask(null);
-                load();
+                load(); } catch (e: any) { setErr(e.message); }
               }} disabled={!String(editTask.title).trim()}>Сохранить</Button>
             </div>
           </div>
@@ -309,8 +313,9 @@ export default function Tasks() {
             </Field>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <Field label="Дедлайн"><Input type="datetime-local" value={bulkForm.due_date} onChange={e => setBulkForm((f: any) => ({ ...f, due_date: e.target.value }))} /></Field>
+            <Field label="Календарь"><Select value={bulkForm.scope || 'shared'} onChange={e => setBulkForm((f: any) => ({ ...f, scope: e.target.value }))}><option value="personal">Личный</option><option value="shared">Общий</option></Select></Field>
             <Field label="Приоритет">
               <Select value={bulkForm.priority} onChange={e => setBulkForm((f: any) => ({ ...f, priority: e.target.value }))}>
                 <option value="low">Низкий</option>

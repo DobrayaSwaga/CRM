@@ -1,14 +1,15 @@
 // © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { Router } from 'express';
 import { db } from '../db.js';
-import { hasPerm, requirePerm } from '../auth.js';
+import { requirePerm } from '../auth.js';
+import { taskVisibility, canEditTask, validDateTime } from '../calendar-access.js';
 import { audit } from '../util.js';
 
 export const tasksRouter = Router();
 
 tasksRouter.get('/', requirePerm('tasks.view'), (req, res) => {
   const q = req.query;
-  const where = [];
+  const where = [taskVisibility(req.user)];
   const params = [];
   if (q.status) { where.push('t.status = ?'); params.push(String(q.status)); }
   if (q.assignee_id) { where.push('t.assignee_id = ?'); params.push(Number(q.assignee_id)); }
@@ -33,22 +34,31 @@ tasksRouter.get('/', requirePerm('tasks.view'), (req, res) => {
   res.json({ tasks });
 });
 
-tasksRouter.post('/', requirePerm('tasks.create'), (req, res) => {
-  const { title, description, contact_id, assignee_id, due_date, priority } = req.body || {};
-  if (!title?.trim()) return res.status(400).json({ error: 'Укажите название задачи' });
+tasksRouter.post('/', (req, res) => {
+  const { title, description, contact_id, assignee_id, due_date, priority, scope = 'shared' } = req.body || {};
+  if (typeof title !== 'string' || !title.trim() || title.length > 500) return res.status(400).json({ error: 'Укажите название задачи' });
+  if (!['personal', 'shared'].includes(scope)) return res.status(400).json({ error: 'Неверный календарь' });
+  if (due_date && !validDateTime(due_date)) return res.status(400).json({ error: 'Некорректная дата' });
+  if (description !== undefined && typeof description !== 'string') return res.status(400).json({ error: 'Некорректное описание' });
+  if (contact_id && (!Number.isSafeInteger(Number(contact_id)) || !db.prepare('SELECT id FROM contacts WHERE id = ?').get(Number(contact_id)))) return res.status(400).json({ error: 'Контакт не найден' });
+  if (assignee_id && (!Number.isSafeInteger(Number(assignee_id)) || !db.prepare('SELECT id FROM users WHERE id = ? AND active = 1').get(Number(assignee_id)))) return res.status(400).json({ error: 'Исполнитель не найден' });
   const info = db.prepare(`
-    INSERT INTO tasks (title, description, contact_id, assignee_id, created_by, due_date, priority)
-    VALUES (?,?,?,?,?,?,?)
+    INSERT INTO tasks (title, description, contact_id, assignee_id, created_by, due_date, priority, scope)
+    VALUES (?,?,?,?,?,?,?,?)
   `).run(title.trim(), description || '', contact_id || null, assignee_id || req.user.id, req.user.id, due_date || null,
-    ['low', 'normal', 'high'].includes(priority) ? priority : 'normal');
+    ['low', 'normal', 'high'].includes(priority) ? priority : 'normal', scope);
   audit(req.user.id, 'task.create', 'tasks', Number(info.lastInsertRowid));
   res.status(201).json({ id: Number(info.lastInsertRowid) });
 });
 
 // Массовая постановка: по шаблону + фильтрам контактов
 tasksRouter.post('/bulk', requirePerm('tasks.create'), (req, res) => {
-  const { title, description, assignee_id, due_date, priority, filters } = req.body || {};
-  if (!title?.trim()) return res.status(400).json({ error: 'Укажите название задачи' });
+  const { title, description, assignee_id, due_date, priority, filters, scope = 'shared' } = req.body || {};
+  if (typeof title !== 'string' || !title.trim() || title.length > 500) return res.status(400).json({ error: 'Укажите название задачи' });
+  if (!['personal', 'shared'].includes(scope)) return res.status(400).json({ error: 'Неверный календарь' });
+  if (due_date && !validDateTime(due_date)) return res.status(400).json({ error: 'Некорректная дата' });
+  if (description !== undefined && typeof description !== 'string') return res.status(400).json({ error: 'Некорректное описание' });
+  if (assignee_id && (!Number.isSafeInteger(Number(assignee_id)) || !db.prepare('SELECT id FROM users WHERE id = ? AND active = 1').get(Number(assignee_id)))) return res.status(400).json({ error: 'Исполнитель не найден' });
   const where = [];
   const params = [];
   if (filters?.status_id) { where.push('status_id = ?'); params.push(Number(filters.status_id)); }
@@ -60,12 +70,12 @@ tasksRouter.post('/bulk', requirePerm('tasks.create'), (req, res) => {
   if (filters?.owner_id) { where.push('owner_id = ?'); params.push(Number(filters.owner_id)); }
   const contacts = db.prepare(`SELECT id FROM contacts ${where.length ? 'WHERE ' + where.join(' AND ') : ''} LIMIT 1000`).all(...params);
   if (contacts.length === 0) return res.status(400).json({ error: 'По фильтрам не найдено ни одного контакта' });
-  const ins = db.prepare('INSERT INTO tasks (title, description, contact_id, assignee_id, created_by, due_date, priority) VALUES (?,?,?,?,?,?,?)');
+  const ins = db.prepare('INSERT INTO tasks (title, description, contact_id, assignee_id, created_by, due_date, priority, scope) VALUES (?,?,?,?,?,?,?,?)');
   db.exec('BEGIN');
   try {
     for (const c of contacts) {
       ins.run(title.trim(), description || '', c.id, assignee_id || req.user.id, req.user.id, due_date || null,
-        ['low', 'normal', 'high'].includes(priority) ? priority : 'normal');
+        ['low', 'normal', 'high'].includes(priority) ? priority : 'normal', scope);
     }
     db.exec('COMMIT');
   } catch (e) {
@@ -76,14 +86,20 @@ tasksRouter.post('/bulk', requirePerm('tasks.create'), (req, res) => {
   res.status(201).json({ created: contacts.length });
 });
 
-tasksRouter.patch('/:id', requirePerm('tasks.edit'), (req, res) => {
+tasksRouter.patch('/:id', (req, res) => {
   const id = Number(req.params.id);
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
   if (!task) return res.status(404).json({ error: 'Задача не найдена' });
   const b = req.body || {};
-  const canManage = hasPerm(req.user, 'tasks.delete') || task.assignee_id === req.user.id || task.created_by === req.user.id;
+  const canManage = canEditTask(req.user, task);
   if (!canManage) return res.status(403).json({ error: 'Нет прав на эту задачу' });
 
+  if (b.description !== undefined && typeof b.description !== 'string') return res.status(400).json({ error: 'Некорректное описание' });
+  if (b.title !== undefined && (typeof b.title !== 'string' || !b.title.trim() || b.title.length > 500)) return res.status(400).json({ error: 'Укажите название' });
+  if (b.scope !== undefined && !['personal', 'shared'].includes(b.scope)) return res.status(400).json({ error: 'Неверный календарь' });
+  if (b.due_date && !validDateTime(b.due_date)) return res.status(400).json({ error: 'Некорректная дата' });
+  if (b.assignee_id && (!Number.isSafeInteger(Number(b.assignee_id)) || !db.prepare('SELECT id FROM users WHERE id = ? AND active = 1').get(Number(b.assignee_id)))) return res.status(400).json({ error: 'Исполнитель не найден' });
+  if (b.scope !== undefined) db.prepare('UPDATE tasks SET scope = ? WHERE id = ?').run(b.scope, id);
   if (b.title !== undefined) db.prepare('UPDATE tasks SET title = ? WHERE id = ?').run(String(b.title).trim(), id);
   if (b.description !== undefined) db.prepare('UPDATE tasks SET description = ? WHERE id = ?').run(String(b.description), id);
   if (b.assignee_id !== undefined) db.prepare('UPDATE tasks SET assignee_id = ? WHERE id = ?').run(b.assignee_id || null, id);
@@ -98,7 +114,10 @@ tasksRouter.patch('/:id', requirePerm('tasks.edit'), (req, res) => {
   res.json({ ok: true });
 });
 
-tasksRouter.delete('/:id', requirePerm('tasks.delete'), (req, res) => {
+tasksRouter.delete('/:id', (req, res) => {
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(Number(req.params.id));
+  if (!task) return res.status(404).json({ error: 'Задача не найдена' });
+  if (!canEditTask(req.user, task)) return res.status(403).json({ error: 'Нет прав на эту задачу' });
   db.prepare('DELETE FROM tasks WHERE id = ?').run(Number(req.params.id));
   audit(req.user.id, 'task.delete', 'tasks', Number(req.params.id));
   res.json({ ok: true });
