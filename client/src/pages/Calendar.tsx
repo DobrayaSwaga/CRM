@@ -1,471 +1,800 @@
-// © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+// © 2026 DobrayaSwaga. See LICENSE.
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight, Plus, CalendarDays } from "lucide-react";
+import { api } from "../api";
+import { useAuth } from "../auth";
 import {
-  ChevronLeft, ChevronRight, GraduationCap, CheckSquare, Plus, CalendarDays,
-  Clock, MapPin, Trash2, Check, X, LayoutGrid, ListTodo, Pencil
-} from 'lucide-react';
-import { api } from '../api';
-import { useAuth } from '../auth';
-import { Card, Spinner, Modal, Field, Input, Select, Textarea, Button, Badge } from '../components/ui';
-import { PageHeader } from '../components/Layout';
-import { EVENT_TYPES, PRIORITY } from '../constants';
+  Modal,
+  Field,
+  Input,
+  Textarea,
+  Select,
+  Button,
+} from "../components/ui";
+import "./Calendar.css";
 
-// ---------- утилиты дат ----------
-const pad = (n: number) => String(n).padStart(2, '0');
-const dateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-// «2026-10-05» | «2026-10-05T16:00» | «2026-10-05 16:00:00» → { date, time }
-const splitDT = (v?: string) => {
-  if (!v) return { date: '', time: '' };
-  const date = v.slice(0, 10);
-  const m = v.slice(10).match(/(\d{1,2}):(\d{2})/);
-  return { date, time: m ? `${pad(Number(m[1]))}:${m[2]}` : '' };
+type Item = {
+  id: number;
+  kind: "event" | "task" | "plan";
+  title: string;
+  description: string;
+  location?: string;
+  start_at: string;
+  end_at: string;
+  scope: "personal" | "shared";
+  all_day: boolean;
+  can_edit: boolean;
+  status?: string;
+  assignee_id?: number;
+  assignee_name?: string;
+  created_by_name?: string;
+  priority?: string;
 };
-const joinDT = (date: string, time: string) => (time ? `${date}T${time}` : date);
-const fmtDayLong = (d: Date) => d.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-const timeNum = (t: string) => Number(t.slice(0, 2) + t.slice(3, 5)); // «11:30» → 1130 для сортировки
+type View = "day" | "week" | "month";
+const pad = (n: number) => String(n).padStart(2, "0");
+const key = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const add = (d: Date, n: number) => {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+};
+const monday = (d: Date) => add(d, -((d.getDay() + 6) % 7));
+const midnight = (s: string) => new Date(`${s.slice(0, 10)}T00:00:00`);
+const time = (s: string) => (s.length > 10 ? s.slice(11, 16) : "");
+const minutes = (s: string) => {
+  const t = time(s);
+  return t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3)) : 0;
+};
+const layer = (i: Item) =>
+  i.kind === "plan"
+    ? "plan"
+    : i.kind === "task"
+      ? i.scope === "personal"
+        ? "mytasks"
+        : "tasks"
+      : i.scope;
+const layers = [
+  { id: "personal", name: "Личный", color: "#a78bfa" },
+  { id: "shared", name: "Общий", color: "#60a5fa" },
+  { id: "mytasks", name: "Мои задачи", color: "#34d399" },
+  { id: "tasks", name: "Общие задачи", color: "#fbbf24" },
+  { id: "plan", name: "План мероприятий КАИТ20", color: "#fb923c" },
+];
+const color = (i: Item) => layers.find((l) => l.id === layer(i))!.color;
+const spansDay = (i: Item, d: Date) =>
+  i.kind !== "event"
+    ? i.start_at.slice(0, 10) === key(d)
+    : i.start_at < key(add(d, 1)) &&
+      i.end_at > (i.all_day ? key(d) : `${key(d)}T00:00`);
+const isLong = (i: Item) =>
+  !!i.all_day || i.start_at.slice(0, 10) !== i.end_at.slice(0, 10);
 
-type CalItem = { kind: 'event' | 'task'; id: number; date: string; time: string; title: string; raw: any };
+// Stable component identity: opening/editing an item never remounts the form on each keystroke.
+function Editor({
+  item,
+  day,
+  onClose,
+  onSaved,
+}: {
+  item: Item | null;
+  day: Date;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { user } = useAuth();
+  const [kind, setKind] = useState(item?.kind || "event");
+  const [form, setForm] = useState({
+    title: item?.title || "",
+    description: item?.description || "",
+    location: item?.location || "",
+    scope: item?.scope || "personal",
+    all_day: !!item?.all_day,
+    start:
+      item?.start_at.replace(" ", "T").slice(0, 16) ||
+      `${key(day)}T${pad(day.getHours() >= 7 && day.getHours() < 22 ? day.getHours() : 9)}:00`,
+    end:
+      item?.kind === "event"
+        ? item.end_at.replace(" ", "T").slice(0, 16)
+        : `${key(day)}T${pad(day.getHours() >= 7 && day.getHours() < 22 ? day.getHours() + 1 : 10)}:00`,
+    assignee_id: item?.assignee_id || user!.id,
+    priority: item?.priority || "normal",
+  });
+  const [users, setUsers] = useState<{ id: number; name: string }[]>([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const writable = !item || item.can_edit;
+  useEffect(() => {
+    api
+      .get("/api/refs/assignees")
+      .then((r) => setUsers(r.users))
+      .catch(() => setError("Не удалось загрузить исполнителей"));
+  }, []);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, onClose]);
+  const update = (p: Partial<typeof form>) => setForm((f) => ({ ...f, ...p }));
+  const action = async (mode: "save" | "delete" | "done") => {
+    if (busy) return;
+    if (
+      mode === "delete" &&
+      !window.confirm("Удалить без возможности восстановления?")
+    )
+      return;
+    setBusy(true);
+    setError("");
+    try {
+      const url = kind === "task" ? "/api/tasks" : "/api/calendar";
+      if (mode === "delete") await api.del(`${url}/${item!.id}`);
+      else if (mode === "done")
+        await api.patch(`${url}/${item!.id}`, {
+          status: item!.status === "done" ? "open" : "done",
+        });
+      else {
+        const start = form.all_day ? form.start.slice(0, 10) : form.start;
+        const end = form.all_day ? form.end.slice(0, 10) : form.end;
+        const body =
+          kind === "task"
+            ? {
+                title: form.title,
+                description: form.description,
+                scope: form.scope,
+                due_date: start,
+                assignee_id: Number(form.assignee_id),
+                priority: form.priority,
+              }
+            : {
+                title: form.title,
+                description: form.description,
+                location: form.location,
+                scope: form.scope,
+                all_day: form.all_day,
+                start_at: start,
+                end_at: end,
+              };
+        if (item) await api.patch(`${url}/${item.id}`, body);
+        else await api.post(url, body);
+      }
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Не удалось сохранить");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      onClose={() => !busy && onClose()}
+      title={
+        item
+          ? kind === "plan"
+            ? "Мероприятие из плана"
+            : "Подробности"
+          : "Новое событие или задача"
+      }
+    >
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          action("save");
+        }}
+      >
+        {error && (
+          <p role="alert" className="text-red-400 text-sm">
+            {error}
+          </p>
+        )}
+        {!item && (
+          <Field label="Тип">
+            <Select
+              value={kind}
+              onChange={(e) => setKind(e.target.value as "event" | "task")}
+            >
+              <option value="event">Событие</option>
+              <option value="task">Задача</option>
+            </Select>
+          </Field>
+        )}
+        <fieldset disabled={!writable || busy} className="space-y-4">
+          <Field label="Название">
+            <Input
+              required
+              maxLength={500}
+              value={form.title}
+              onChange={(e) => update({ title: e.target.value })}
+            />
+          </Field>
+          {kind !== "plan" && (
+            <Field label="Календарь">
+              <Select
+                value={form.scope}
+                onChange={(e) =>
+                  update({ scope: e.target.value as "personal" | "shared" })
+                }
+              >
+                <option value="personal">
+                  Личный — автор, исполнитель и администратор
+                </option>
+                <option value="shared">Общий — виден всем пользователям</option>
+              </Select>
+            </Field>
+          )}
+          <label className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.all_day}
+              onChange={(e) => {
+                const all = e.target.checked;
+                update({
+                  all_day: all,
+                  start: all
+                    ? form.start.slice(0, 10)
+                    : `${form.start.slice(0, 10)}T09:00`,
+                  end: all
+                    ? key(add(midnight(form.start), 1))
+                    : `${form.start.slice(0, 10)}T10:00`,
+                });
+              }}
+            />
+            Весь день
+          </label>
+          <Field label={kind === "task" ? "Срок выполнения" : "Начало"}>
+            <Input
+              required
+              type={form.all_day ? "date" : "datetime-local"}
+              value={form.start}
+              onChange={(e) => update({ start: e.target.value })}
+            />
+          </Field>
+          {kind === "event" && (
+            <Field
+              label={
+                form.all_day
+                  ? "Окончание (эта дата не включается)"
+                  : "Окончание"
+              }
+            >
+              <Input
+                required
+                type={form.all_day ? "date" : "datetime-local"}
+                value={form.end}
+                onChange={(e) => update({ end: e.target.value })}
+              />
+            </Field>
+          )}
+          {kind === "task" && (
+            <>
+              <Field label="Исполнитель">
+                <Select
+                  value={form.assignee_id}
+                  onChange={(e) =>
+                    update({ assignee_id: Number(e.target.value) })
+                  }
+                >
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="Приоритет">
+                <Select
+                  value={form.priority}
+                  onChange={(e) => update({ priority: e.target.value })}
+                >
+                  <option value="low">Низкий</option>
+                  <option value="normal">Обычный</option>
+                  <option value="high">Высокий</option>
+                </Select>
+              </Field>
+            </>
+          )}
+          {kind !== "task" && (
+            <Field label="Место">
+              <Input
+                value={form.location}
+                onChange={(e) => update({ location: e.target.value })}
+              />
+            </Field>
+          )}
+          <Field label="Описание">
+            <Textarea
+              rows={4}
+              value={form.description}
+              onChange={(e) => update({ description: e.target.value })}
+            />
+          </Field>
+        </fieldset>
+        {item?.created_by_name && (
+          <p className="text-xs text-slate-400">
+            Автор: {item.created_by_name}
+          </p>
+        )}
+        {kind === "plan" && (
+          <p className="text-sm text-slate-400">
+            Событие из плана. Изменения доступны в разделе «ДОД».
+          </p>
+        )}
+        {!writable && kind !== "plan" && (
+          <p className="text-sm text-slate-400">
+            Доступно только для просмотра.
+          </p>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {writable && (
+            <Button type="submit" variant="primary" disabled={busy}>
+              {busy ? "Сохранение…" : "Сохранить"}
+            </Button>
+          )}
+          {item && writable && (
+            <Button
+              type="button"
+              variant="danger"
+              disabled={busy}
+              onClick={() => action("delete")}
+            >
+              Удалить
+            </Button>
+          )}
+          {item && kind === "task" && writable && (
+            <Button
+              type="button"
+              disabled={busy}
+              onClick={() => action("done")}
+            >
+              {item.status === "done" ? "Вернуть в работу" : "Выполнить"}
+            </Button>
+          )}
+          <Button type="button" disabled={busy} onClick={onClose}>
+            Закрыть
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
 export default function CalendarPage() {
-  const { hasPerm } = useAuth();
-  const [view, setView] = useState<'month' | 'day'>('month');
-  const [cursor, setCursor] = useState(() => { const d = new Date(); d.setDate(1); return d; });
-  const [dayCursor, setDayCursor] = useState(() => new Date());
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [dodEvents, setDodEvents] = useState<any[]>([]);
+  const [cursor, setCursor] = useState(() => new Date());
+  const [mini, setMini] = useState(() => new Date());
+  const [view, setView] = useState<View>("week");
+  const [enabled, setEnabled] = useState(
+    () => new Set(layers.map((l) => l.id)),
+  );
+  const [items, setItems] = useState<Item[]>([]);
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [assignees, setAssignees] = useState<any[]>([]);
-
-  // Модалки
-  const [editEvent, setEditEvent] = useState<any | null>(null);
-  const [editTask, setEditTask] = useState<any | null>(null);
-  const [createFor, setCreateFor] = useState<{ kind: 'event' | 'task' } | null>(null);
-  const [err, setErr] = useState('');
-
-  const canDod = hasPerm('dod.manage');
-  const canTasks = hasPerm('tasks.create');
-
-  // Загружаем «окно» вокруг видимого месяца (и для дневного вида — того же месяца)
-  const activeMonth = view === 'month' ? cursor : new Date(dayCursor.getFullYear(), dayCursor.getMonth(), 1);
-  const load = useCallback(() => {
+  const [revision, setRevision] = useState(0);
+  const [editor, setEditor] = useState<{ item: Item | null; day: Date } | null>(
+    null,
+  );
+  const [showDone, setShowDone] = useState(false);
+  const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+  const start =
+    view === "month"
+      ? monday(monthStart)
+      : view === "week"
+        ? monday(cursor)
+        : midnight(key(cursor));
+  const count = view === "month" ? 42 : view === "week" ? 7 : 1;
+  const from = key(start),
+    to = key(add(start, count));
+  const days = useMemo(
+    () => Array.from({ length: count }, (_, i) => add(midnight(from), i)),
+    [from, count],
+  );
+  useEffect(() => {
+    let active = true;
     setLoading(true);
-    const y = activeMonth.getFullYear(), m = activeMonth.getMonth();
-    const from = dateStr(new Date(y, m - 1, 1));
-    const to = dateStr(new Date(y, m + 2, 0));
-    Promise.all([
-      api.get(`/api/tasks?due_from=${encodeURIComponent(from)}&due_to=${encodeURIComponent(to)}`),
-      api.get('/api/dod-events'),
-    ]).then(([t, d]) => {
-      setTasks(t.tasks);
-      setDodEvents(d.events);
-      setLoading(false);
-    });
-  }, [activeMonth]);
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get('/api/refs/assignees').then(d => setAssignees(d.users)).catch(() => {}); }, []);
-
-  // Все элементы одной даты
-  const itemsOf = useMemo(() => {
-    return (date: string): CalItem[] => {
-      const items: CalItem[] = [];
-      for (const d of dodEvents) {
-        const { date: dd, time } = splitDT(d.event_date);
-        if (dd === date) items.push({ kind: 'event', id: d.id, date, time, title: d.name, raw: d });
-      }
-      for (const t of tasks) {
-        const { date: td, time } = splitDT(t.due_date);
-        if (td === date) items.push({ kind: 'task', id: t.id, date, time, title: t.title, raw: t });
-      }
-      return items.sort((a, b) => (timeNum(a.time || '99:99') - timeNum(b.time || '99:99')) || (a.kind > b.kind ? 1 : -1));
+    setError("");
+    api
+      .get(`/api/calendar?from=${from}&to=${to}`)
+      .then((r) => {
+        if (active) setItems(r.items);
+      })
+      .catch((e) => {
+        if (active) {
+          setError(e.message);
+          setItems([]);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
     };
-  }, [dodEvents, tasks]);
-
-  const today = dateStr(new Date());
-
-  // ---------- действия ----------
-  const saveEvent = async (form: any, isNew: boolean) => {
-    try {
-      const payload = {
-        name: form.name, event_type: form.event_type, location: form.location || '',
-        event_date: joinDT(form.date, form.time), description: form.description || '',
-      };
-      if (isNew) await api.post('/api/dod-events', payload);
-      else await api.patch(`/api/dod-events/${form.id}`, payload);
-      setEditEvent(null);
-      setCreateFor(null);
-      load();
-    } catch (e: any) { setErr(e.message); }
+  }, [from, to, revision]);
+  const visible = items.filter(
+    (i) =>
+      enabled.has(layer(i)) &&
+      (showDone || !["done", "cancelled"].includes(i.status || "")),
+  );
+  const selectDay = (d: Date) => {
+    setCursor(d);
+    setMini(d);
   };
-
-  const saveTask = async (form: any, isNew: boolean) => {
-    try {
-      const payload: any = {
-        title: form.title, description: form.description || '', priority: form.priority || 'normal',
-        due_date: form.date ? joinDT(form.date, form.time) : null,
-        assignee_id: form.assignee_id ? Number(form.assignee_id) : undefined,
-      };
-      if (isNew) await api.post('/api/tasks', payload);
-      else await api.patch(`/api/tasks/${form.id}`, payload);
-      setEditTask(null);
-      setCreateFor(null);
-      load();
-    } catch (e: any) { setErr(e.message); }
-  };
-
-  const toggleTask = async (t: any) => {
-    await api.patch(`/api/tasks/${t.id}`, { status: t.status === 'done' ? 'open' : 'done' }).catch(() => {});
-    load();
-  };
-
-  const deleteEvent = async (id: number) => {
-    if (!confirm('Удалить мероприятие и все отметки о посещении?')) return;
-    await api.del(`/api/dod-events/${id}`).catch(e => setErr(e.message));
-    setEditEvent(null);
-    load();
-  };
-
-  const deleteTask = async (id: number) => {
-    if (!confirm('Удалить задачу?')) return;
-    await api.del(`/api/tasks/${id}`).catch(e => setErr(e.message));
-    setEditTask(null);
-    load();
-  };
-
-  // ---------- модалка события ----------
-  const EventModal = ({ initial, onClose, onDelete }: { initial: any; onClose: () => void; onDelete?: (id: number) => void }) => {
-    const [form, setForm] = useState<any>(() => ({
-      id: initial.id, name: initial.name || '', event_type: initial.event_type || 'dod',
-      date: initial.date || splitDT(initial.event_date).date || dateStr(dayCursor),
-      time: initial.time !== undefined ? initial.time : splitDT(initial.event_date).time,
-      location: initial.location || '', description: initial.description || '',
-    }));
-    return (
-      <Modal open onClose={onClose} title={form.id ? 'Мероприятие' : 'Новое мероприятие'}>
-        <div className="space-y-3">
-          {err && <div className="text-red-300 text-xs bg-red-500/10 border border-red-400/25 rounded-xl px-3 py-2">{err}</div>}
-          <Field label="Тип">
-            <div className="flex gap-1.5 flex-wrap">
-              {Object.entries(EVENT_TYPES).map(([key, meta]) => (
-                <button key={key} type="button" onClick={() => setForm((f: any) => ({ ...f, event_type: key }))}
-                  className="px-3 py-1.5 rounded-lg border text-xs font-medium transition-all"
-                  style={form.event_type === key
-                    ? { background: `${meta.color}22`, borderColor: `${meta.color}70`, color: meta.color }
-                    : { borderColor: 'rgba(255,255,255,0.1)', color: '#64748b' }}>
-                  {meta.label}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Название"><Input autoFocus value={form.name} onChange={e => setForm((f: any) => ({ ...f, name: e.target.value }))} /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Дата"><Input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} /></Field>
-            <Field label="Время"><Input type="time" value={form.time} onChange={e => setForm((f: any) => ({ ...f, time: e.target.value }))} /></Field>
-          </div>
-          <Field label="Место"><Input value={form.location} onChange={e => setForm((f: any) => ({ ...f, location: e.target.value }))} /></Field>
-          <div className="flex justify-between gap-2 pt-1">
-            <div>
-              {onDelete && form.id && (
-                <Button variant="danger" size="sm" onClick={() => onDelete(form.id)}><Trash2 size={13} /> Удалить</Button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={onClose}>Отмена</Button>
-              <Button variant="primary" disabled={!form.name.trim() || !form.date} onClick={() => saveEvent(form, !form.id)}>Сохранить</Button>
-            </div>
-          </div>
-        </div>
-      </Modal>
+  const shift = (n: number) =>
+    selectDay(
+      view === "month"
+        ? new Date(
+            cursor.getFullYear(),
+            cursor.getMonth() + n,
+            Math.min(
+              cursor.getDate(),
+              new Date(
+                cursor.getFullYear(),
+                cursor.getMonth() + n + 1,
+                0,
+              ).getDate(),
+            ),
+          )
+        : add(cursor, n * (view === "week" ? 7 : 1)),
     );
-  };
-
-  // ---------- модалка задачи ----------
-  const TaskModal = ({ initial, onClose, onDelete }: { initial: any; onClose: () => void; onDelete?: (id: number) => void }) => {
-    const [form, setForm] = useState<any>(() => ({
-      id: initial.id, title: initial.title || '', description: initial.description || '',
-      priority: initial.priority || 'normal', assignee_id: initial.assignee_id ? String(initial.assignee_id) : '',
-      date: initial.date || splitDT(initial.due_date).date || dateStr(dayCursor),
-      time: initial.time !== undefined ? initial.time : splitDT(initial.due_date).time,
-    }));
-    return (
-      <Modal open onClose={onClose} title={form.id ? 'Задача' : 'Новая задача'}>
-        <div className="space-y-3">
-          {err && <div className="text-red-300 text-xs bg-red-500/10 border border-red-400/25 rounded-xl px-3 py-2">{err}</div>}
-          <Field label="Задача"><Input autoFocus value={form.title} onChange={e => setForm((f: any) => ({ ...f, title: e.target.value }))} placeholder="Что нужно сделать" /></Field>
-          <Field label="Описание"><Textarea rows={2} value={form.description} onChange={e => setForm((f: any) => ({ ...f, description: e.target.value }))} /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Дата"><Input type="date" value={form.date} onChange={e => setForm((f: any) => ({ ...f, date: e.target.value }))} /></Field>
-            <Field label="Время"><Input type="time" value={form.time} onChange={e => setForm((f: any) => ({ ...f, time: e.target.value }))} /></Field>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Исполнитель">
-              <Select value={form.assignee_id} onChange={e => setForm((f: any) => ({ ...f, assignee_id: e.target.value }))}>
-                <option value="">Я сам</option>
-                {assignees.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </Select>
-            </Field>
-            <Field label="Приоритет">
-              <Select value={form.priority} onChange={e => setForm((f: any) => ({ ...f, priority: e.target.value }))}>
-                <option value="low">Низкий</option>
-                <option value="normal">Обычный</option>
-                <option value="high">Высокий</option>
-              </Select>
-            </Field>
-          </div>
-          <div className="flex justify-between gap-2 pt-1">
-            <div>
-              {onDelete && form.id && hasPerm('tasks.delete') && (
-                <Button variant="danger" size="sm" onClick={() => onDelete(form.id)}><Trash2 size={13} /> Удалить</Button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={onClose}>Отмена</Button>
-              <Button variant="primary" disabled={!form.title.trim()} onClick={() => saveTask(form, !form.id)}>Сохранить</Button>
-            </div>
-          </div>
+  const miniDays = Array.from({ length: 42 }, (_, i) =>
+    add(monday(new Date(mini.getFullYear(), mini.getMonth(), 1)), i),
+  );
+  const title = cursor.toLocaleDateString("ru-RU", {
+    month: "long",
+    year: "numeric",
+    ...(view === "day" ? { day: "numeric" as const } : {}),
+  });
+  const chip = (item: Item, extra?: React.CSSProperties) => (
+    <button
+      key={`${item.kind}-${item.id}`}
+      type="button"
+      className={`cal-event ${item.status === "done" ? "cal-done" : ""}`}
+      title={`${item.title}\n${item.start_at.replace("T", " ")}${item.kind === "event" ? " — " + item.end_at.replace("T", " ") : ""}`}
+      style={{ "--event-color": color(item), ...extra } as React.CSSProperties}
+      onClick={(e) => {
+        e.stopPropagation();
+        setEditor({ item, day: midnight(item.start_at) });
+      }}
+    >
+      <span>
+        {item.kind === "task" ? "☐ " : ""}
+        {!item.all_day && time(item.start_at)} {item.title}
+      </span>
+    </button>
+  );
+  return (
+    <section className="cal-shell">
+      <aside className="cal-sidebar">
+        <h1>
+          <CalendarDays size={22} /> Календарь
+        </h1>
+        <button
+          className="cal-create"
+          onClick={() => setEditor({ item: null, day: cursor })}
+        >
+          <Plus size={20} /> Создать событие
+        </button>
+        <div className="cal-mini-title">
+          <strong>
+            {mini.toLocaleDateString("ru-RU", {
+              month: "long",
+              year: "numeric",
+            })}
+          </strong>
+          <button
+            aria-label="Предыдущий месяц мини-календаря"
+            onClick={() =>
+              setMini(new Date(mini.getFullYear(), mini.getMonth() - 1, 1))
+            }
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <button
+            aria-label="Следующий месяц мини-календаря"
+            onClick={() =>
+              setMini(new Date(mini.getFullYear(), mini.getMonth() + 1, 1))
+            }
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
-      </Modal>
-    );
-  };
-
-  // ---------- чипы месяца ----------
-  const monthChip = (item: CalItem) => {
-    const isEvent = item.kind === 'event';
-    const color = isEvent ? (EVENT_TYPES[item.raw.event_type]?.color || '#8b5cf6') : '#34d399';
-    const doneTask = !isEvent && item.raw.status === 'done';
-    const clickable = isEvent ? canDod : hasPerm('tasks.edit');
-    return (
-      <button
-        key={`${item.kind[0]}${item.id}`}
-        onClick={e => {
-          e.stopPropagation();
-          if (!clickable) return;
-          if (isEvent) setEditEvent(item.raw); else setEditTask(item.raw);
-        }}
-        title={`${item.time ? item.time + ' ' : ''}${item.title}${clickable ? ' — нажмите, чтобы изменить' : ''}`}
-        className={`block w-full text-left text-[10px] px-1.5 py-1 rounded-md border truncate transition-all ${doneTask ? 'opacity-50 line-through' : ''} ${clickable ? 'hover:brightness-125 cursor-pointer' : 'cursor-default'}`}
-        style={{ background: `${color}1a`, borderColor: `${color}45`, color }}
-      >
-        {isEvent ? <GraduationCap size={9} className="inline mr-1" /> : <CheckSquare size={9} className="inline mr-1" />}
-        {item.time && <span className="font-semibold">{item.time} </span>}
-        {item.title}
-      </button>
-    );
-  };
-
-  // ---------- дневной вид: карточка элемента ----------
-  const dayCard = (item: CalItem) => {
-    const isEvent = item.kind === 'event';
-    const color = isEvent ? (EVENT_TYPES[item.raw.event_type]?.color || '#8b5cf6') : '#34d399';
-    const t = item.raw;
-    return (
-      <div
-        key={`${item.kind[0]}${item.id}`}
-        className="glass rounded-xl px-3 py-2 flex items-center gap-3 group"
-        style={{ borderLeft: `3px solid ${color}` }}
-      >
-        <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border" style={{ background: `${color}1a`, borderColor: `${color}40` }}>
-          {isEvent ? <GraduationCap size={15} style={{ color }} /> : <ListTodo size={15} style={{ color }} />}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className={`text-[13px] font-medium ${!isEvent && t.status === 'done' ? 'text-slate-500 line-through' : 'text-slate-200'}`}>{item.title}</div>
-          <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 flex-wrap">
-            <span style={{ color }}>{isEvent ? EVENT_TYPES[t.event_type]?.short || 'ДОД' : 'Задача'}</span>
-            {item.time && <span className="flex items-center gap-1"><Clock size={10} /> {item.time}</span>}
-            {isEvent && t.location && <span className="flex items-center gap-1"><MapPin size={10} /> {t.location}</span>}
-            {!isEvent && t.assignee_name && <span>{t.assignee_name}</span>}
-            {isEvent && <span>{t.attendees_count} уч.</span>}
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {!isEvent && hasPerm('tasks.edit') && (
+        <div className="cal-mini">
+          {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((s) => (
+            <span key={s}>{s}</span>
+          ))}
+          {miniDays.map((d) => (
             <button
-              onClick={() => toggleTask(t)}
-              title={t.status === 'done' ? 'Вернуть в работу' : 'Выполнить'}
-              className={`p-1.5 rounded-lg border transition-all ${t.status === 'done' ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300' : 'border-white/10 text-slate-500 hover:text-emerald-300 hover:border-emerald-400/40'}`}
-            ><Check size={13} /></button>
-          )}
-          {(isEvent ? canDod : hasPerm('tasks.edit')) && (
-            <button
-              onClick={() => isEvent ? setEditEvent(t) : setEditTask(t)}
-              title="Изменить дату/время и детали"
-              className="p-1.5 rounded-lg border border-white/10 text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-all"
-            ><Pencil size={13} /></button>
-          )}
-          {isEvent && (
-            <Link to="/dod" title="Открыть в разделе «ДОД»" className="p-1.5 rounded-lg border border-white/10 text-slate-500 hover:text-violet-300 hover:bg-white/5 transition-all">
-              <GraduationCap size={13} />
-            </Link>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // ---------- рендер месяца ----------
-  const renderMonth = () => {
-    const year = cursor.getFullYear();
-    const month = cursor.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const startOffset = (new Date(year, month, 1).getDay() + 6) % 7;
-    const cells: (number | null)[] = [...Array(startOffset).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
-    while (cells.length % 7 !== 0) cells.push(null);
-
-    return (
-      <Card className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        <div className="grid grid-cols-7 border-b border-white/8 shrink-0">
-          {['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(d => (
-            <div key={d} className="text-center text-[11px] font-medium text-slate-500 py-2.5">{d}</div>
+              key={key(d)}
+              className={`${d.getMonth() !== mini.getMonth() ? "muted" : ""} ${key(d) === key(cursor) ? "selected" : ""} ${key(d) === key(new Date()) ? "today" : ""}`}
+              onClick={() => selectDay(d)}
+            >
+              {d.getDate()}
+            </button>
           ))}
         </div>
-        <div className="grid grid-cols-7 flex-1 auto-rows-fr overflow-y-auto">
-          {cells.map((day, i) => {
-            if (day === null) return <div key={i} className="border-b border-r border-white/4 bg-white/[0.015]" />;
-            const ds = `${year}-${pad(month + 1)}-${pad(day)}`;
-            const items = itemsOf(ds);
-            const isT = ds === today;
-            return (
-              <div
-                key={i}
-                onClick={() => { setDayCursor(new Date(year, month, day)); setView('day'); }}
-                className={`border-b border-r border-white/4 p-1.5 min-h-[90px] cursor-pointer hover:bg-white/4 transition-colors group/day ${isT ? 'bg-indigo-500/8' : ''}`}
-                title="Открыть расписание дня"
+        <h2>Мои календари</h2>
+        {layers.map((l) => (
+          <label className="cal-layer" key={l.id}>
+            <input
+              type="checkbox"
+              style={{ accentColor: l.color }}
+              checked={enabled.has(l.id)}
+              onChange={() =>
+                setEnabled((s) => {
+                  const next = new Set(s);
+                  if (next.has(l.id)) next.delete(l.id);
+                  else next.add(l.id);
+                  return next;
+                })
+              }
+            />
+            <span>{l.name}</span>
+          </label>
+        ))}
+        <label className="cal-layer cal-completed">
+          <input
+            type="checkbox"
+            checked={showDone}
+            onChange={(e) => setShowDone(e.target.checked)}
+          />
+          Показывать завершённые
+        </label>
+        <p className="cal-hint">
+          Личный календарь виден только вам и администратору. Личные задачи
+          также видит исполнитель или постановщик. Общий календарь доступен всей
+          команде.
+        </p>
+      </aside>
+      <div className="cal-main">
+        <header className="cal-toolbar">
+          <div className="cal-navigation">
+            <button onClick={() => selectDay(new Date())}>Сегодня</button>
+            <button aria-label="Предыдущий период" onClick={() => shift(-1)}>
+              <ChevronLeft size={19} />
+            </button>
+            <button aria-label="Следующий период" onClick={() => shift(1)}>
+              <ChevronRight size={19} />
+            </button>
+            <h2>{title}</h2>
+          </div>
+          <div className="cal-views">
+            {(
+              [
+                ["day", "День"],
+                ["week", "Неделя"],
+                ["month", "Месяц"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                aria-pressed={view === v}
+                className={view === v ? "active" : ""}
+                onClick={() => setView(v)}
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className={`text-[11px] font-semibold inline-flex w-6 h-6 items-center justify-center rounded-lg ${isT ? 'bg-indigo-500 on-accent shadow-lg shadow-indigo-500/40' : 'text-slate-500'}`}>
-                    {day}
-                  </span>
-                  <span className="opacity-0 group-hover/day:opacity-100 transition-opacity text-slate-600"><Plus size={11} /></span>
-                </div>
-                <div className="space-y-1">
-                  {items.slice(0, 3).map(monthChip)}
-                  {items.length > 3 && <div className="text-[9px] text-slate-600 px-1">ещё {items.length - 3} →</div>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-    );
-  };
-
-  // ---------- рендер дня ----------
-  const renderDay = () => {
-    const ds = dateStr(dayCursor);
-    const items = itemsOf(ds);
-    const timed = items.filter(i => i.time);
-    const untimed = items.filter(i => !i.time);
-    // Группируем по часу (7:00–22:00 показываем шкалу, остальное уходит в ближайший час)
-    const HOURS = Array.from({ length: 16 }, (_, i) => i + 7);
-    const byHour = new Map<number, CalItem[]>();
-    for (const it of timed) {
-      let h = Number(it.time.slice(0, 2));
-      h = Math.min(22, Math.max(7, h));
-      if (!byHour.has(h)) byHour.set(h, []);
-      byHour.get(h)!.push(it);
-    }
-
-    return (
-      <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto">
-        {untimed.length > 0 && (
-          <Card className="p-3 shrink-0">
-            <div className="text-[11px] text-slate-500 mb-2 font-medium">Без времени ({untimed.length})</div>
-            <div className="space-y-2">{untimed.map(dayCard)}</div>
-          </Card>
-        )}
-        <Card className="flex-1 min-h-0 overflow-y-auto p-0">
-          <div className="min-w-0">
-            {HOURS.map(h => (
-              <div key={h} className={`flex border-b border-white/4 min-h-[52px] ${byHour.has(h) ? '' : 'opacity-45'}`}>
-                <div className="w-16 shrink-0 pt-2.5 text-right pr-3 text-[11px] font-mono text-slate-600 border-r border-white/6">
-                  {pad(h)}:00
-                </div>
-                <div className="flex-1 p-1.5 space-y-1.5">
-                  {(byHour.get(h) || []).map(dayCard)}
-                </div>
-              </div>
+                {label}
+              </button>
             ))}
           </div>
-        </Card>
-        {items.length === 0 && (
-          <div className="text-center text-xs text-slate-600 py-6">
-            На этот день ничего не запланировано — добавьте мероприятие или задачу кнопками сверху.
+        </header>
+        {error && (
+          <div role="alert" className="cal-error">
+            {error}{" "}
+            <button onClick={() => setRevision((r) => r + 1)}>Повторить</button>
           </div>
         )}
-      </div>
-    );
-  };
-
-  const monthName = cursor.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
-
-  return (
-    <div className="h-full flex flex-col animate-fade-in">
-      <PageHeader title="Календарь" subtitle="Мероприятия и задачи: нажмите на день, чтобы открыть расписание">
-        {/* Переключатель вида */}
-        <div className="flex items-center rounded-xl border border-white/10 overflow-hidden">
-          <button
-            onClick={() => setView('month')}
-            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${view === 'month' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:bg-white/5'}`}
-          ><LayoutGrid size={13} /> Месяц</button>
-          <button
-            onClick={() => setView('day')}
-            className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${view === 'day' ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:bg-white/5'}`}
-          ><CalendarDays size={13} /> День</button>
+        <div aria-live="polite" className="cal-status">
+          {loading
+            ? "Загрузка…"
+            : `${visible.length} событий и задач · время местное`}
         </div>
-        {(canDod || canTasks) && (
-          <>
-            {canTasks && (
-              <Button variant="default" size="sm" onClick={() => setCreateFor({ kind: 'task' })}><CheckSquare size={13} /> Задача</Button>
-            )}
-            {canDod && (
-              <Button variant="primary" size="sm" onClick={() => setCreateFor({ kind: 'event' })}><Plus size={13} /> Мероприятие</Button>
-            )}
-          </>
-        )}
-      </PageHeader>
-
-      {err && <div className="text-red-300 text-xs bg-red-500/10 border border-red-400/25 rounded-xl px-3 py-2 mb-2">{err}</div>}
-
-      {/* Навигация */}
-      <div className="flex items-center gap-2 mb-3">
-        {view === 'month' ? (
-          <div className="flex items-center gap-1">
-            <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:bg-white/5"><ChevronLeft size={15} /></button>
-            <button onClick={() => { const d = new Date(); d.setDate(1); setCursor(d); }} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 capitalize min-w-40 text-center">{monthName}</button>
-            <button onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:bg-white/5"><ChevronRight size={15} /></button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 flex-wrap">
-            <button onClick={() => setDayCursor(new Date(dayCursor.getTime() - 86400000))} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:bg-white/5"><ChevronLeft size={15} /></button>
-            <button onClick={() => setDayCursor(new Date())} className="text-xs px-3 py-2 rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 capitalize min-w-56 text-center">
-              {fmtDayLong(dayCursor)}{dateStr(dayCursor) === today ? ' · сегодня' : ''}
-            </button>
-            <button onClick={() => setDayCursor(new Date(dayCursor.getTime() + 86400000))} className="p-2 rounded-xl border border-white/10 text-slate-400 hover:bg-white/5"><ChevronRight size={15} /></button>
-            <button
-              onClick={() => setView('month')}
-              className="text-[11px] px-2.5 py-2 rounded-xl border border-white/10 text-slate-500 hover:text-slate-200 hover:bg-white/5 ml-1 flex items-center gap-1"
-            ><X size={11} /> к месяцу</button>
-          </div>
-        )}
-        <div className="hidden md:flex items-center gap-3 text-[11px] text-slate-600 ml-auto">
-          {Object.entries(EVENT_TYPES).map(([k, m]) => (
-            <span key={k} className="flex items-center gap-1"><span className="w-2 h-2 rounded-full" style={{ background: m.color }} /> {m.short}</span>
-          ))}
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Задача</span>
+        <div className="cal-scroll" aria-busy={loading}>
+          {view === "month" ? (
+            <div className="cal-month">
+              <div className="cal-weekdays">
+                {[
+                  "Понедельник",
+                  "Вторник",
+                  "Среда",
+                  "Четверг",
+                  "Пятница",
+                  "Суббота",
+                  "Воскресенье",
+                ].map((s) => (
+                  <span key={s}>{s}</span>
+                ))}
+              </div>
+              <div className="cal-month-days">
+                {days.map((d) => (
+                  <div
+                    key={key(d)}
+                    className={`cal-month-cell ${d.getMonth() !== cursor.getMonth() ? "cal-outside" : ""}`}
+                  >
+                    <button
+                      className={`cal-date ${key(d) === key(new Date()) ? "today" : ""}`}
+                      onClick={() => {
+                        selectDay(d);
+                        setView("day");
+                      }}
+                    >
+                      {d.getDate()}
+                    </button>
+                    <button
+                      className="cal-cell-add"
+                      aria-label={`Создать ${key(d)}`}
+                      onClick={() => setEditor({ item: null, day: d })}
+                    >
+                      +
+                    </button>
+                    {visible
+                      .filter((i) => spansDay(i, d))
+                      .sort((a, b) => a.start_at.localeCompare(b.start_at))
+                      .map((i) => chip(i))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div
+              className="cal-time"
+              style={{ minWidth: view === "week" ? 760 : 320 }}
+            >
+              <div
+                className="cal-day-head"
+                style={{
+                  gridTemplateColumns: `52px repeat(${count}, minmax(0, 1fr))`,
+                }}
+              >
+                <span />
+                {days.map((d) => (
+                  <button
+                    key={key(d)}
+                    onClick={() => {
+                      selectDay(d);
+                      setView("day");
+                    }}
+                  >
+                    <small>
+                      {d.toLocaleDateString("ru-RU", { weekday: "short" })}
+                    </small>
+                    <b className={key(d) === key(new Date()) ? "today" : ""}>
+                      {d.getDate()}
+                    </b>
+                  </button>
+                ))}
+              </div>
+              <div
+                className="cal-allday"
+                style={{
+                  gridTemplateColumns: `52px repeat(${count}, minmax(0, 1fr))`,
+                }}
+              >
+                <small>
+                  Весь
+                  <br />
+                  день /<br />
+                  вне сетки
+                </small>
+                {days.map((d) => (
+                  <div key={key(d)}>
+                    {visible
+                      .filter(
+                        (i) =>
+                          spansDay(i, d) &&
+                          (isLong(i) ||
+                            minutes(i.start_at) < 420 ||
+                            minutes(i.start_at) >= 1320),
+                      )
+                      .map((i) => chip(i))}
+                  </div>
+                ))}
+              </div>
+              <div
+                className="cal-grid"
+                style={{
+                  gridTemplateColumns: `52px repeat(${count}, minmax(0, 1fr))`,
+                }}
+              >
+                <div className="cal-hours">
+                  {Array.from({ length: 16 }, (_, h) => (
+                    <span key={h} style={{ top: h * 60 }}>
+                      {pad(h + 7)}:00
+                    </span>
+                  ))}
+                </div>
+                {days.map((d) => {
+                  const timed = visible
+                    .filter(
+                      (i) =>
+                        spansDay(i, d) &&
+                        !isLong(i) &&
+                        minutes(i.start_at) >= 420 &&
+                        minutes(i.start_at) < 1320,
+                    )
+                    .sort((a, b) => a.start_at.localeCompare(b.start_at));
+                  // Allocate columns by connected overlap groups, not globally per day.
+                  const positioned: {
+                    item: Item;
+                    start: number;
+                    end: number;
+                    col: number;
+                    cols: number;
+                  }[] = [];
+                  let group: typeof positioned = [],
+                    groupEnd = -1;
+                  const flush = () => {
+                    const cols = Math.max(1, ...group.map((x) => x.col + 1));
+                    group.forEach((x) => (x.cols = cols));
+                    positioned.push(...group);
+                    group = [];
+                  };
+                  for (const item of timed) {
+                    const s = minutes(item.start_at);
+                    const e = Math.max(
+                      s + 30,
+                      item.kind === "event" ? minutes(item.end_at) : s + 30,
+                    );
+                    if (s >= groupEnd) {
+                      flush();
+                      groupEnd = -1;
+                    }
+                    const occupied = new Set(
+                      group.filter((x) => x.end > s).map((x) => x.col),
+                    );
+                    let col = 0;
+                    while (occupied.has(col)) col++;
+                    group.push({ item, start: s, end: e, col, cols: 1 });
+                    groupEnd = Math.max(groupEnd, e);
+                  }
+                  flush();
+                  return (
+                    <div key={key(d)} className="cal-day-column">
+                      {Array.from({ length: 15 }, (_, h) => (
+                        <button
+                          key={h}
+                          className="cal-slot"
+                          aria-label={`Создать ${key(d)} ${pad(h + 7)}:00`}
+                          onClick={() => {
+                            const date = new Date(d);
+                            date.setHours(h + 7);
+                            setEditor({ item: null, day: date });
+                          }}
+                        />
+                      ))}
+                      {positioned.map((p) =>
+                        chip(p.item, {
+                          position: "absolute",
+                          top: p.start - 420,
+                          height: Math.min(p.end, 1320) - p.start - 2,
+                          left: `${(p.col / p.cols) * 100}%`,
+                          width: `calc(${100 / p.cols}% - 3px)`,
+                        }),
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-
-      {loading ? <Spinner /> : view === 'month' ? renderMonth() : renderDay()}
-
-      {/* Модалки */}
-      {editEvent && <EventModal initial={editEvent} onClose={() => { setEditEvent(null); setErr(''); }} onDelete={deleteEvent} />}
-      {editTask && <TaskModal initial={editTask} onClose={() => { setEditTask(null); setErr(''); }} onDelete={deleteTask} />}
-      {createFor?.kind === 'event' && canDod && (
-        <EventModal initial={{ event_type: 'dod', date: dateStr(dayCursor), time: view === 'day' ? '11:00' : '' }} onClose={() => { setCreateFor(null); setErr(''); }} />
+      {editor && (
+        <Editor
+          key={
+            editor.item
+              ? `${editor.item.kind}-${editor.item.id}`
+              : `new-${editor.day.toISOString()}`
+          }
+          item={editor.item}
+          day={editor.day}
+          onClose={() => setEditor(null)}
+          onSaved={() => {
+            setEditor(null);
+            setRevision((r) => r + 1);
+          }}
+        />
       )}
-      {createFor?.kind === 'task' && canTasks && (
-        <TaskModal initial={{ date: dateStr(dayCursor), time: view === 'day' ? '12:00' : '' }} onClose={() => { setCreateFor(null); setErr(''); }} />
-      )}
-    </div>
+    </section>
   );
 }

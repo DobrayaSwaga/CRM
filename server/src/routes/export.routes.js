@@ -1,4 +1,5 @@
 // © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
+import { taskVisibility } from '../calendar-access.js';
 import { Router } from 'express';
 import xlsx from 'xlsx';
 import { db } from '../db.js';
@@ -77,7 +78,7 @@ exportRouter.get('/contacts', requirePerm('export.run'), (req, res) => {
 });
 
 exportRouter.get('/tasks', requirePerm('export.run'), (req, res) => {
-  const where = [];
+  const where = [taskVisibility(req.user)];
   const params = [];
   if (req.query.status) { where.push('t.status = ?'); params.push(String(req.query.status)); }
   if (req.query.assignee_id) { where.push('t.assignee_id = ?'); params.push(Number(req.query.assignee_id)); }
@@ -104,7 +105,7 @@ exportRouter.get('/tasks', requirePerm('export.run'), (req, res) => {
   sendXlsx(res, `tasks-${new Date().toISOString().slice(0, 10)}.xlsx`, [{ name: 'Задачи', rows: data }]);
 });
 
-exportRouter.get('/analytics', requirePerm('export.run'), (_req, res) => {
+exportRouter.get('/analytics', requirePerm('export.run'), (req, res) => {
   const byStatus = db.prepare(`
     SELECT s.name AS 'Статус', COUNT(c.id) AS 'Количество'
     FROM statuses s LEFT JOIN contacts c ON c.status_id = s.id
@@ -120,8 +121,8 @@ exportRouter.get('/analytics', requirePerm('export.run'), (_req, res) => {
   const managers = db.prepare(`
     SELECT u.name AS 'Менеджер',
       (SELECT COUNT(*) FROM contacts c WHERE c.owner_id = u.id) AS 'Контактов',
-      (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'done') AS 'Выполнено задач',
-      (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'open' AND t.due_date < datetime('now')) AS 'Просрочено',
+      (SELECT COUNT(*) FROM tasks t WHERE ${taskVisibility(req.user)} AND t.assignee_id = u.id AND t.status = 'done') AS 'Выполнено задач',
+      (SELECT COUNT(*) FROM tasks t WHERE ${taskVisibility(req.user)} AND t.assignee_id = u.id AND t.status = 'open' AND t.due_date < datetime('now')) AS 'Просрочено',
       (SELECT COUNT(*) FROM contacts c JOIN statuses s ON s.id = c.status_id WHERE c.owner_id = u.id AND s.is_success = 1) AS 'Поступило'
     FROM users u WHERE u.active = 1
   `).all();

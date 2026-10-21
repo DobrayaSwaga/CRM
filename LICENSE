@@ -1,26 +1,113 @@
-MIT License
+NexusCRM — лицензия использования и уведомление об авторских правах
+© 2026 DobrayaSwaga. Все права, прямо не предоставленные ниже, сохраняются.
 
-Copyright (c) 2026 DobrayaSwaga
+1. Авторство и охрана
+Автор проекта NexusCRM публикуется под псевдонимом DobrayaSwaga.
+Авторство, право на имя и неприкосновенность произведения охраняются применимым
+законодательством, в том числе статьями 1255, 1259, 1265 и 1266 ГК РФ в той мере,
+в какой они применимы. Передача экземпляра или разрешение использования кода
+не означают передачи авторства или исключительного права. История репозитория
+может служить одним из доказательств происхождения кода, но не является
+безусловным доказательством авторства каждого фрагмента.
 
-Автор проекта NexusCRM — DobrayaSwaga.
-Данная лицензия разрешает использование, копирование, изменение и распространение
-программного обеспечения при обязательном сохранении уведомления об авторских
-правах и этого текста во всех копиях и производных версиях.
+2. Разрешение и обязательная атрибуция
+Безвозмездно, на весь срок охраны и на территории всего мира разрешаются
+использование, воспроизведение, изучение, изменение, распространение, включая
+коммерческое, и предоставление доступа к программному обеспечению NexusCRM
+в исходной или объектной форме при соблюдении следующих условий:
+а) сохраняются это уведомление, имя DobrayaSwaga и полный текст лицензии
+в распространяемых экземплярах и существенных частях кода; для бинарной
+поставки они размещаются в документации либо в доступном разделе «О программе»;
+б) в документации производной версии указываются происхождение NexusCRM,
+автор DobrayaSwaga и ссылка https://github.com/DobrayaSwaga/CRM;
+в) существенные изменения явно помечаются как изменения соответствующего
+разработчика; нельзя приписывать исходному автору чужие изменения или заявлять
+исключительное авторство на неизменённый исходный проект;
+г) уведомления об авторстве и лицензиях сторонних компонентов сохраняются.
+Права на сторонние компоненты предоставляются исключительно их лицензиями.
+Лицензия не предоставляет права на персональные данные, пользовательские
+материалы, учётные данные либо иное содержимое баз данных.
+Эти условия не ограничивают права, которые нельзя ограничить по закону.
+Нарушение условий прекращает предоставленное здесь разрешение в той мере,
+в какой такое прекращение допускается применимым законодательством.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+3. Название, обозначения и товарный знак
+Лицензия не предоставляет прав на товарные знаки, логотипы или иные средства
+индивидуализации автора и третьих лиц. Упоминание NexusCRM и DobrayaSwaga
+для правдивой атрибуции допускается. Запрещено создавать ложное впечатление
+об одобрении, официальном статусе или поддержке производной версии автором.
+Этот раздел не утверждает наличие государственной регистрации товарного знака.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+4. Отказ от гарантий и ограничение ответственности
+Программное обеспечение предоставляется «КАК ЕСТЬ», без гарантий пригодности
+для конкретной цели, бесперебойности, безопасности, отсутствия ошибок или
+ненарушения прав третьих лиц. В максимально допустимой законом степени автор
+и правообладатели не отвечают за убытки, утрату данных, упущенную выгоду или
+иные последствия использования либо невозможности использования программы.
+Пользователь самостоятельно обеспечивает резервное копирование, безопасность,
+законные основания обработки персональных данных и соблюдение требований закона.
+Этот отказ не исключает ответственности, которую закон запрещает исключать.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+5. Применимое право и ранее выданные разрешения
+К настоящей лицензии применяется право Российской Федерации без ущерба
+императивным нормам, применимым в соответствующей юрисдикции. Споры разрешаются
+компетентным судом согласно применимым правилам подсудности. Недействительность
+отдельного положения не отменяет остальные положения в допустимой законом мере.
+Русский текст имеет преимущество при расхождении с английским переводом,
+если это допускает применимое право.
+Эта лицензия применяется к версиям, опубликованным с этим текстом. Она не
+отменяет ранее выданные разрешения: версии, полученные под MIT или иной
+предыдущей лицензией, сохраняют условия соответствующей лицензии.
+
+────────────────────────────────────────────────────────────────────────
+English translation — NexusCRM license
+© 2026 DobrayaSwaga. All rights not expressly granted are reserved.
+
+1. Authorship
+The author of NexusCRM is identified by the pseudonym DobrayaSwaga. Authorship,
+attribution and integrity are protected by applicable law, including Articles
+1255, 1259, 1265 and 1266 of the Russian Civil Code where applicable. A copy or
+permission to use the software does not transfer authorship or exclusive rights.
+Repository history may be evidence of provenance, not conclusive proof of the
+authorship of every part.
+
+2. Permission and attribution
+Permission is granted, free of charge, worldwide and for the term of protection,
+to use, copy, study, modify, distribute (including commercially), and make
+NexusCRM available in source or binary form, subject to these conditions:
+a) retain this copyright notice, the name DobrayaSwaga and this full license
+in distributed copies and substantial portions; binary distributions must
+include them in documentation or an accessible About section;
+b) derivative documentation must identify NexusCRM, credit DobrayaSwaga and
+link to https://github.com/DobrayaSwaga/CRM;
+c) clearly identify substantial modifications and their developer; do not
+attribute others' changes to the original author or claim sole authorship of
+the unmodified original project;
+d) retain third-party copyright and license notices. Third-party components
+remain governed by their own licenses. No rights to personal data, user content,
+credentials or database contents are granted. Statutory non-waivable rights
+are unaffected. Breach terminates this permission to the extent permitted by law.
+
+3. Names and trademarks
+No trademark, logo or other branding rights are granted. Truthful attribution
+using NexusCRM and DobrayaSwaga is permitted. Do not imply endorsement, official
+status or support of a derivative by the author. This clause makes no claim
+that a trademark is registered.
+
+4. Disclaimer
+THE SOFTWARE IS PROVIDED AS IS, WITHOUT WARRANTIES OF FITNESS FOR A PURPOSE,
+UNINTERRUPTED OPERATION, SECURITY, FREEDOM FROM ERRORS OR NON-INFRINGEMENT.
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, AUTHORS AND RIGHTHOLDERS ARE NOT LIABLE
+FOR DAMAGES, DATA LOSS, LOST PROFITS OR OTHER CONSEQUENCES OF USING OR BEING
+UNABLE TO USE THE SOFTWARE. Users are responsible for backups, security,
+lawful personal-data processing and legal compliance. Mandatory liability
+that cannot legally be excluded remains unaffected.
+
+5. Governing law and earlier permissions
+Russian Federation law applies, without prejudice to mandatory local law.
+Disputes are resolved by competent courts under applicable jurisdiction rules.
+Invalidity of a clause does not invalidate the remainder to the extent allowed
+by law. The Russian text prevails in case of discrepancy where legally permitted.
+This license applies to versions published with it and does not revoke earlier
+permissions: copies received under MIT or another earlier license remain
+subject to that license.

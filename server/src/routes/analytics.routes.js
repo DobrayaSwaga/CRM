@@ -1,11 +1,12 @@
 // © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
+import { taskVisibility } from '../calendar-access.js';
 import { Router } from 'express';
 import { db } from '../db.js';
 import { requirePerm } from '../auth.js';
 
 export const analyticsRouter = Router();
 
-analyticsRouter.get('/dashboard', requirePerm('analytics.view'), (_req, res) => {
+analyticsRouter.get('/dashboard', requirePerm('analytics.view'), (req, res) => {
   const total = db.prepare('SELECT COUNT(*) c FROM contacts').get().c;
   const byTemperature = db.prepare('SELECT temperature, COUNT(*) c FROM contacts GROUP BY temperature').all();
   const byStatus = db.prepare(`
@@ -14,8 +15,8 @@ analyticsRouter.get('/dashboard', requirePerm('analytics.view'), (_req, res) => 
     GROUP BY s.id ORDER BY s.sort_order
   `).all();
   const newLast30 = db.prepare("SELECT COUNT(*) c FROM contacts WHERE created_at >= datetime('now', '-30 days')").get().c;
-  const overdueTasks = db.prepare("SELECT COUNT(*) c FROM tasks WHERE status = 'open' AND due_date < datetime('now')").get().c;
-  const openTasks = db.prepare("SELECT COUNT(*) c FROM tasks WHERE status = 'open'").get().c;
+  const overdueTasks = db.prepare(`SELECT COUNT(*) c FROM tasks t WHERE status = 'open' AND due_date < datetime('now') AND ${taskVisibility(req.user)}`).get().c;
+  const openTasks = db.prepare(`SELECT COUNT(*) c FROM tasks t WHERE status = 'open' AND ${taskVisibility(req.user)}`).get().c;
   const upcomingDod = db.prepare(`
     SELECT d.*, (SELECT COUNT(DISTINCT t.contact_id) FROM touchpoints t WHERE t.dod_event_id = d.id) AS attendees
     FROM dod_events d WHERE d.event_date >= datetime('now', '-1 day') ORDER BY d.event_date LIMIT 5
@@ -88,14 +89,14 @@ analyticsRouter.get('/sources', requirePerm('analytics.view'), (_req, res) => {
   res.json({ sources: rows });
 });
 
-analyticsRouter.get('/managers', requirePerm('analytics.view'), (_req, res) => {
+analyticsRouter.get('/managers', requirePerm('analytics.view'), (req, res) => {
   const rows = db.prepare(`
     SELECT u.id, u.name,
       (SELECT COUNT(*) FROM contacts c WHERE c.owner_id = u.id) AS contacts,
       (SELECT COUNT(*) FROM contacts c WHERE c.owner_id = u.id AND c.temperature = 'hot') AS hot_contacts,
-      (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'done') AS tasks_done,
-      (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'open') AS tasks_open,
-      (SELECT COUNT(*) FROM tasks t WHERE t.assignee_id = u.id AND t.status = 'open' AND t.due_date < datetime('now')) AS tasks_overdue,
+      (SELECT COUNT(*) FROM tasks t WHERE ${taskVisibility(req.user)} AND t.assignee_id = u.id AND t.status = 'done') AS tasks_done,
+      (SELECT COUNT(*) FROM tasks t WHERE ${taskVisibility(req.user)} AND t.assignee_id = u.id AND t.status = 'open') AS tasks_open,
+      (SELECT COUNT(*) FROM tasks t WHERE ${taskVisibility(req.user)} AND t.assignee_id = u.id AND t.status = 'open' AND t.due_date < datetime('now')) AS tasks_overdue,
       (SELECT COUNT(*) FROM contacts c JOIN statuses s ON s.id = c.status_id WHERE c.owner_id = u.id AND s.is_success = 1) AS enrolled
     FROM users u WHERE u.active = 1 ORDER BY contacts DESC
   `).all();
@@ -107,13 +108,13 @@ analyticsRouter.get('/notifications', requirePerm('analytics.view'), (req, res) 
   const overdue = db.prepare(`
     SELECT t.id, t.title, t.due_date, t.contact_id, (c.last_name || ' ' || c.first_name) AS contact_name
     FROM tasks t LEFT JOIN contacts c ON c.id = t.contact_id
-    WHERE t.status = 'open' AND t.due_date < datetime('now') AND (t.assignee_id = ? OR t.assignee_id IS NULL)
+    WHERE ${taskVisibility(req.user)} AND t.status = 'open' AND t.due_date < datetime('now') AND (t.assignee_id = ? OR t.assignee_id IS NULL)
     ORDER BY t.due_date LIMIT 10
   `).all(req.user.id);
   const today = db.prepare(`
     SELECT t.id, t.title, t.due_date, t.contact_id, (c.last_name || ' ' || c.first_name) AS contact_name
     FROM tasks t LEFT JOIN contacts c ON c.id = t.contact_id
-    WHERE t.status = 'open' AND date(t.due_date) = date('now') AND (t.assignee_id = ? OR t.assignee_id IS NULL)
+    WHERE ${taskVisibility(req.user)} AND t.status = 'open' AND date(t.due_date) = date('now') AND (t.assignee_id = ? OR t.assignee_id IS NULL)
     ORDER BY t.due_date LIMIT 10
   `).all(req.user.id);
   const upcomingDod = db.prepare(`
@@ -127,7 +128,7 @@ analyticsRouter.get('/notifications', requirePerm('analytics.view'), (req, res) 
   const idleHot = db.prepare(`
     SELECT c.id, (c.last_name || ' ' || c.first_name) AS name, c.score FROM contacts c
     WHERE c.temperature = 'hot' AND NOT EXISTS (
-      SELECT 1 FROM tasks t WHERE t.contact_id = c.id AND t.status = 'open'
+      SELECT 1 FROM tasks t WHERE ${taskVisibility(req.user)} AND t.contact_id = c.id AND t.status = 'open'
     ) ORDER BY c.score DESC LIMIT 5
   `).all();
   res.json({

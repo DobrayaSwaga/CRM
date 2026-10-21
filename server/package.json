@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node --watch src/index.js",
-    "prod": "node src/index.js"
+    "prod": "node src/index.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
