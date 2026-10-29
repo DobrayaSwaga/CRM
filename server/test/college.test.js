@@ -181,6 +181,52 @@ test("logical backup round-trip retains new calendar and college identity tables
   assert.equal(db.prepare("SELECT COUNT(*) n FROM calendar_events").get().n, 1);
   assert.equal(importCollege(file, "replay.xlsx", 1).created, 0);
 });
+const dodFile = readFileSync(new URL('../../Отчет ДОД - 29.10.2026 19-20-30.xlsx', import.meta.url));
+test('DOD report selects visitor tickets instead of summary or organizers', () => {
+  const sheet = readPeopleSheet(dodFile);
+  assert.equal(sheet.name, 'Заявки (билеты)');
+  assert.equal(sheet.rows.length - 1, 499);
+  assert.ok(sheet.headings.includes('фио'));
+  const { mapping } = guessMapping(sheet.rows[0]);
+  assert.equal(sheet.headings[Object.keys(mapping).find(k => mapping[k] === 'fio')], 'фио');
+  assert.equal(sheet.headings[Object.keys(mapping).find(k => mapping[k] === 'phone')], 'телефон');
+});
+test('DOD report imports all tickets, separates no-shows, and replays safely', () => {
+  const before = db.prepare('SELECT COUNT(*) n FROM contacts').get().n;
+  const report = importCollege(dodFile, 'Отчет ДОД - 29.10.2026 19-20-30.xlsx', 1, 'dod');
+  assert.equal(report.total, 499);
+  assert.equal(report.skipped, 0);
+  assert.equal(report.created + report.matched, 499);
+  assert.equal(report.eventsCreated, 6);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM dod_events WHERE event_type='dod'").get().n, 6);
+  const sheet = readPeopleSheet(dodFile);
+  const statusIndex = sheet.headings.indexOf('статус билета');
+  const visited = sheet.rows.slice(1).filter(r => r[statusIndex] === 'Посетил').length;
+  assert.equal(report.visited, visited);
+  assert.equal(report.registered, 0);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM touchpoints t JOIN dod_events d ON d.id=t.dod_event_id WHERE d.event_type='dod' AND t.type='note'").get().n, 499 - visited);
+  const contacts = db.prepare('SELECT COUNT(*) n FROM contacts').get().n;
+  assert.equal(contacts, before + report.created);
+  const again = importCollege(dodFile, 'Отчет ДОД renamed.xlsx', 1, 'dod');
+  assert.equal(again.already, 499);
+  assert.equal(again.created, 0);
+  assert.equal(again.eventsCreated, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM contacts').get().n, contacts);
+  console.log('DOD report counts only', JSON.stringify(report));
+});
+test('DOD report can also be previewed and uploaded through the existing UI API', async () => {
+  const form = new FormData(); form.append('file', new Blob([dodFile]), 'dod.xlsx');
+  const preview = await fetch(base + '/import/preview', { method: 'POST', headers: { 'x-user': 'admin' }, body: form });
+  assert.equal(preview.status, 200);
+  const body = await preview.json();
+  assert.equal(body.detected.kind, 'college');
+  assert.equal(body.detected.suggestedEventType, 'dod');
+  assert.equal(body.totalRows, 499);
+  const request = new FormData(); request.append('file', new Blob([dodFile]), 'dod.xlsx'); request.append('eventType', 'dod');
+  const uploaded = await fetch(base + '/import/attendance', { method: 'POST', headers: { 'x-user': 'admin' }, body: request });
+  assert.equal(uploaded.status, 200);
+  assert.equal((await uploaded.json()).already, 499);
+});
 after(async () => {
   await new Promise((r) => server.close(r));
   db.close();
