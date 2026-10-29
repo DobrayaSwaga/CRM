@@ -140,3 +140,41 @@ exportRouter.get('/analytics', requirePerm('export.run'), (req, res) => {
     { name: 'ДОД', rows: dod },
   ]);
 });
+
+// Administrative, unfiltered data extract. Never include password hashes or sessions.
+exportRouter.get('/database', (req, res) => {
+  if (!req.user?.permissions.includes('*')) return res.status(403).json({ error: 'Полная выгрузка доступна только администратору' });
+  const tables = ['contacts', 'contact_programs', 'custom_fields', 'contact_field_values', 'contact_relations', 'contact_documents', 'statuses', 'programs', 'dod_events', 'calendar_events', 'touchpoints', 'tasks', 'task_templates', 'scoring_rules', 'imports', 'duplicate_candidates', 'audit_log', 'messages', 'chat_read_state', 'college_people', 'college_import_rows'];
+  const sheets = [{ name: 'О выгрузке', rows: [
+    { Параметр: 'Создано UTC', Значение: new Date().toISOString() },
+    { Параметр: 'Состав', Значение: 'Все строки рабочих таблиц без фильтров; личные события/задачи включены. Только для администратора.' },
+    { Параметр: 'Исключено', Значение: 'Пароли, хэши, сессии, настройки и разрешения ролей. Файлы вложений не включены — только их метаданные.' },
+    { Параметр: 'Назначение', Значение: 'Excel для анализа, не резервная копия для восстановления. Сохраняйте также SQLite и uploads.' },
+  ] }];
+  try {
+    db.exec('BEGIN');
+    for (const table of tables) {
+      const columns = db.prepare(`PRAGMA table_info("${table}")`).all().map(c => c.name);
+      const rows = db.prepare(`SELECT * FROM "${table}"`).all();
+      sheets.push({ name: table, rows, columns });
+    }
+    sheets.push({ name: 'users', rows: db.prepare('SELECT id,login,name,role_id,active,created_at FROM users').all() });
+    sheets.push({ name: 'roles', rows: db.prepare('SELECT id,name,is_system,created_at FROM roles').all() });
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); return res.status(500).json({ error: 'Не удалось подготовить выгрузку' }); }
+  // json_to_sheet writes strings as strings, not as formula cells.
+  const wb = xlsx.utils.book_new();
+  for (const { name, rows, columns } of sheets) {
+    const pageSize = 1000000;
+    for (let offset = 0; offset < Math.max(rows.length, 1); offset += pageSize) {
+      const suffix = offset ? `_${offset / pageSize + 1}` : '';
+      const ws = xlsx.utils.json_to_sheet(rows.slice(offset, offset + pageSize), columns ? { header: columns } : {});
+      xlsx.utils.book_append_sheet(wb, ws, name.slice(0, 31 - suffix.length) + suffix);
+    }
+  }
+  res.setHeader('Cache-Control', 'no-store');
+  const buffer = xlsx.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="nexuscrm-database-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+  res.send(buffer);
+});

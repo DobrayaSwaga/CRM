@@ -378,3 +378,11 @@ CREATE TABLE IF NOT EXISTS calendar_events (
 );
 CREATE INDEX IF NOT EXISTS idx_calendar_range ON calendar_events(start_at, end_at);
 `);
+
+// Stable identities and processed rows: retrying college workbooks must not duplicate people.
+db.exec(`CREATE TABLE IF NOT EXISTS college_people (
+  identity TEXT PRIMARY KEY, contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS college_import_rows (
+  fingerprint TEXT PRIMARY KEY, contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE
+);`);
