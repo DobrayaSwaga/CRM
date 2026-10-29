@@ -158,26 +158,27 @@ try {
   console.log('⚠️ Автозаполнение календаря не удалось:', e.message);
 }
 
-// One-time requested import. Never replace the database or reset accounts.
-if (process.env.IMPORT_BUNDLED_COLLEGE !== '0') {
-  const filename = 'Экспорт_колледж - 20261029-184934.xlsx';
-  const file = path.resolve(__dirname, '../../', filename);
-  if (fs.existsSync(file)) {
+// Requested bundled workbooks: import once into the existing DB, without replacing accounts.
+for (const config of [
+  { filename: 'Экспорт_колледж - 20261029-184934.xlsx', env: 'IMPORT_BUNDLED_COLLEGE', prefix: 'college-import', backup: 'college', type: null },
+  { filename: 'Отчет ДОД - 29.10.2026 19-20-30.xlsx', env: 'IMPORT_BUNDLED_DOD', prefix: 'dod-report-import', backup: 'dod-report', type: 'dod' },
+]) {
+  if (process.env[config.env] === '0') continue;
+  const file = path.resolve(__dirname, '../../', config.filename);
+  if (!fs.existsSync(file)) continue;
+  try {
     const buffer = fs.readFileSync(file);
-    const marker = 'college-import:' + crypto.createHash('sha256').update(buffer).digest('hex');
-    if (!db.prepare('SELECT value FROM settings WHERE key=?').get(marker)) {
-      try {
-        const admin = db.prepare("SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id WHERE u.active=1 AND EXISTS (SELECT 1 FROM json_each(r.permissions) WHERE value='*') ORDER BY u.id LIMIT 1").get();
-        if (!admin) throw new Error('Не найден активный администратор');
-        const backupDir = path.resolve(process.cwd(), 'backups');
-        fs.mkdirSync(backupDir, { recursive: true });
-        db.prepare('VACUUM INTO ?').run(path.join(backupDir, `before-college-${Date.now()}.db`));
-        const report = importCollege(buffer, filename, admin.id);
-        db.prepare('INSERT INTO settings(key,value) VALUES (?,?)').run(marker, JSON.stringify(report));
-        console.log(`Импорт колледжа: строк ${report.total}, новых контактов ${report.created}, уже обработано ${report.already}, пропущено ${report.skipped}`);
-      } catch (e) { console.error('Импорт колледжа не выполнен:', e.message); }
-    }
-  }
+    const marker = config.prefix + ':' + crypto.createHash('sha256').update(buffer).digest('hex');
+    if (db.prepare('SELECT value FROM settings WHERE key=?').get(marker)) continue;
+    const admin = db.prepare("SELECT u.id FROM users u JOIN roles r ON r.id=u.role_id WHERE u.active=1 AND EXISTS (SELECT 1 FROM json_each(r.permissions) WHERE value='*') ORDER BY u.id LIMIT 1").get();
+    if (!admin) throw new Error('Не найден активный администратор');
+    const backupDir = path.resolve(process.cwd(), 'backups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    db.prepare('VACUUM INTO ?').run(path.join(backupDir, `before-${config.backup}-${Date.now()}.db`));
+    const report = importCollege(buffer, config.filename, admin.id, config.type);
+    db.prepare('INSERT INTO settings(key,value) VALUES (?,?)').run(marker, JSON.stringify(report));
+    console.log(`Импорт «${config.filename}»: строк ${report.total}, новых контактов ${report.created}, совпадений ${report.matched}, уже обработано ${report.already}, пропущено ${report.skipped}`);
+  } catch (e) { console.error(`Импорт «${config.filename}» не выполнен:`, e.message); }
 }
 
 // ---------- Раздача интерфейса ----------

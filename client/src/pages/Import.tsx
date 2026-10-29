@@ -217,7 +217,7 @@ export default function ImportPage() {
                   <GraduationCap size={22} className="text-violet-300" />
                 </div>
                 <div className="flex-1 min-w-56">
-                  <div className="text-sm font-semibold text-slate-100">{detected.kind === 'college' ? 'Экспорт колледжа: люди и несколько мероприятий' : 'Это выгрузка участников мероприятия'}</div>
+                  <div className="text-sm font-semibold text-slate-100">{detected.kind === 'college' ? 'Таблица заявок: люди и мероприятия' : 'Это выгрузка участников мероприятия'}</div>
                   <div className="text-xs text-slate-400 mt-0.5">
                     {detected.summary && <span className="text-violet-300 font-medium">{detected.summary}</span>}
                     {detected.eventTime && <span> в {detected.eventTime}</span>}
@@ -277,7 +277,7 @@ export default function ImportPage() {
               : 'Если нужен обычный импорт людей без посещений — используйте сопоставление ниже.'}
           </div>
 
-          {detected?.kind === 'college' && <p className="text-xs text-slate-400">Для формата колледжа используются фиксированные колонки листа «Заявки». Сопоставление ниже показано для проверки; импорт выполняется специализированным обработчиком.</p>}
+          {detected?.kind === 'college' && <p className="text-xs text-slate-400">Для этого формата используются фиксированные колонки листа заявок. Сопоставление ниже показано для проверки; импорт выполняется специализированным обработчиком.</p>}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

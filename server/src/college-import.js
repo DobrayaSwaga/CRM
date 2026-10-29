@@ -22,6 +22,7 @@ export function importCollege(buffer, filename, userId, requestedType = null) {
     throw new Error(
       "Нужен лист заявок с ФИО, ID билета и наименованием мероприятия",
     );
+  const isDodReport = requestedType === "dod" || sheet.rows[0].some(h => /^фио посетителя$/i.test(String(h).trim()));
   const rows = sheet.rows.slice(1),
     h = sheet.headings;
   const value = (row, name) => String(row[h.indexOf(name)] ?? "").trim();
@@ -123,7 +124,7 @@ export function importCollege(buffer, filename, userId, requestedType = null) {
             school,
             value(row, "класс"),
             value(row, "регион"),
-            "Экспорт колледж",
+            isDodReport ? "Отчет ДОД" : "Экспорт колледж",
             status?.id || null,
             userId,
             userId,
@@ -182,7 +183,7 @@ export function importCollege(buffer, filename, userId, requestedType = null) {
         ).run(
           contact.id,
           type,
-          `${type === visitType ? "Посещение" : type === `${visitType}_registration` ? "Регистрация" : "Заявка"}: ${title}`,
+          `${type === visitType ? "Посещение" : type === `${visitType}_registration` ? "Регистрация" : st.includes("неявка") ? "Неявка" : "Заявка"}: ${title}`,
           JSON.stringify(details),
           date.iso,
           event.id,

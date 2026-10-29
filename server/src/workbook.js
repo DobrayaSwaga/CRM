@@ -7,7 +7,8 @@ export const header = (value) =>
     .toLowerCase()
     .replace(/ё/g, "е")
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .replace(/^фио посетителя$/, "фио");
 export function readPeopleSheet(buffer) {
   const wb = xlsx.read(buffer, { type: "buffer", cellDates: true });
   const sheets = wb.SheetNames.map((name) => {
