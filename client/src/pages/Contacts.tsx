@@ -157,7 +157,7 @@ export function ContactForm({ initial, onSaved, onClose }: { initial?: any; onSa
 }
 
 export default function Contacts() {
-  const { hasPerm } = useAuth();
+  const { user, hasPerm } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -208,6 +208,7 @@ export default function Contacts() {
   return (
     <div className="animate-fade-in">
       <PageHeader title="Контакты" subtitle={data ? `${data.total} записей в базе` : 'Загрузка…'}>
+        {user?.permissions.includes('*') && <Button variant="default" size="sm" onClick={() => { if (confirm('Скачать всю базу, включая личные задачи и события? Файл содержит персональные данные.')) window.open('/api/export/database', '_blank'); }}><Download size={14} /> Вся база Excel</Button>}
         {hasPerm('export.run') && (
           <Button variant="default" size="sm" onClick={() => {
             const qs = new URLSearchParams();

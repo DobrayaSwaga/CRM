@@ -9,13 +9,13 @@ import { useAuth } from '../auth';
 import { EVENT_TYPES } from '../constants';
 
 type Detected = {
-  kind: 'contacts' | 'event_attendance' | 'event_plan';
+  kind: 'contacts' | 'event_attendance' | 'event_plan' | 'college';
   summary?: string; eventName?: string; eventDate?: string; eventTime?: string;
   visited?: number; registered?: number; totalEvents?: number; suggestedEventType?: string;
 };
 
 type Preview = {
-  fileKey: string; filename: string; headers: string[]; sample: any[]; totalRows: number;
+  fileKey: string; filename: string; sheetName?: string; headers: string[]; sample: any[]; totalRows: number;
   guessedMapping: Record<number, string>; fields: { key: string; label: string }[];
   customFields: { id: number; name: string }[];
   suggestedSource?: string; detected?: Detected;
@@ -58,6 +58,7 @@ export default function ImportPage() {
 
   const execute = async () => {
     if (!preview) return;
+    if (preview.detected?.kind === 'college') { await importAttendance(); return; }
     setBusy(true);
     setError('');
     try {
@@ -202,21 +203,21 @@ export default function ImportPage() {
               <FileSpreadsheet size={18} className="text-emerald-400" />
               <div>
                 <div className="text-sm font-medium text-slate-200">{preview.filename}</div>
-                <div className="text-xs text-slate-500">{preview.totalRows} строк данных</div>
+                <div className="text-xs text-slate-500">{preview.totalRows} строк данных{preview.sheetName ? ` · лист «${preview.sheetName}»` : ''}</div>
               </div>
             </div>
             <Button variant="ghost" size="sm" onClick={reset}><ArrowLeft size={13} /> Другой файл</Button>
           </Card>
 
           {/* Распознана выгрузка посетителей мероприятия */}
-          {detected?.kind === 'event_attendance' && (
+          {(detected?.kind === 'event_attendance' || detected?.kind === 'college') && (
             <Card className="p-5 border !border-violet-400/30" style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.12), transparent 60%)' }}>
               <div className="flex flex-wrap items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-violet-500/20 border border-violet-400/30 flex items-center justify-center shrink-0">
                   <GraduationCap size={22} className="text-violet-300" />
                 </div>
                 <div className="flex-1 min-w-56">
-                  <div className="text-sm font-semibold text-slate-100">Это выгрузка участников мероприятия</div>
+                  <div className="text-sm font-semibold text-slate-100">{detected.kind === 'college' ? 'Экспорт колледжа: люди и несколько мероприятий' : 'Это выгрузка участников мероприятия'}</div>
                   <div className="text-xs text-slate-400 mt-0.5">
                     {detected.summary && <span className="text-violet-300 font-medium">{detected.summary}</span>}
                     {detected.eventTime && <span> в {detected.eventTime}</span>}
@@ -225,7 +226,7 @@ export default function ImportPage() {
                     ) : null}
                   </div>
                   <div className="text-[11px] text-slate-500 mt-1">
-                    Система найдёт событие в календаре (или создаст его), сопоставит людей по телефону и проставит посещения посетившим.
+                    Система загрузит людей, найдёт или создаст мероприятия и проставит регистрации и посещения. В экспорте колледжа общий семейный телефон не объединяет разных людей; повторная загрузка тех же строк безопасна.
                   </div>
                   <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
                     <span className="text-[11px] text-slate-500 mr-1">Источник таблицы:</span>
@@ -276,6 +277,7 @@ export default function ImportPage() {
               : 'Если нужен обычный импорт людей без посещений — используйте сопоставление ниже.'}
           </div>
 
+          {detected?.kind === 'college' && <p className="text-xs text-slate-400">Для формата колледжа используются фиксированные колонки листа «Заявки». Сопоставление ниже показано для проверки; импорт выполняется специализированным обработчиком.</p>}
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -285,6 +287,7 @@ export default function ImportPage() {
                       <th key={i} className="px-3 py-3 text-left min-w-44">
                         <div className="text-[11px] text-slate-400 mb-1.5 truncate font-semibold" title={h}>{h || `Колонка ${i + 1}`}</div>
                         <select
+                          disabled={detected?.kind === 'college'}
                           value={mapping[i] ?? 'ignore'}
                           onChange={e => {
                             const v = e.target.value;
@@ -390,7 +393,7 @@ export default function ImportPage() {
           <div className="w-16 h-16 rounded-2xl bg-violet-500/15 border border-violet-400/30 flex items-center justify-center mx-auto mb-4">
             <GraduationCap size={28} className="text-violet-300" />
           </div>
-          <h3 className="text-lg font-bold text-slate-100">Посещения загружены</h3>
+          <h3 className="text-lg font-bold text-slate-100">{result.college ? 'Люди и мероприятия загружены' : 'Посещения загружены'}</h3>
           <p className="text-sm text-slate-400 mt-1">
             Мероприятие: <b className="text-violet-300">{result.event?.name}</b>
             {result.event?.event_type && <Badge color={EVENT_TYPES[result.event.event_type]?.color || '#8b5cf6'}>{EVENT_TYPES[result.event.event_type]?.label}</Badge>}
@@ -413,8 +416,11 @@ export default function ImportPage() {
           <div className="text-[11px] text-slate-600 mt-3">
             Найдены в базе: {result.matched} · уже были отмечены: {result.already} · пропущено строк: {result.skipped}
           </div>
+          {result.college && <p className="text-xs text-slate-400 mt-2">Создано мероприятий: {result.eventsCreated}. Повторные строки пропускаются.</p>}
+          {Array.isArray(result.errors) && result.errors.length > 0 && <div role="alert" className="text-sm text-red-300 mt-3">{result.errors.slice(0, 20).map((r: any) => <p key={r.row}>Строка {r.row}: {r.error}</p>)}</div>}
           <div className="flex justify-center gap-2 mt-6">
             <Button variant="default" onClick={reset}>Загрузить ещё</Button>
+            <Link to="/contacts"><Button variant="default">К контактам</Button></Link>
             <Link to="/dod"><Button variant="primary"><GraduationCap size={14} /> К мероприятию</Button></Link>
           </div>
         </Card>

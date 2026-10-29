@@ -1,7 +1,9 @@
 // © 2026 DobrayaSwaga · NexusCRM — авторский проект. Лицензия: см. файл LICENSE.
 import { Router } from 'express';
 import multer from 'multer';
-import xlsx from 'xlsx';
+import crypto from 'node:crypto';
+import { readPeopleSheet, isCollegeSheet } from '../workbook.js';
+import { importCollege } from '../college-import.js';
 import { db } from '../db.js';
 import { requirePerm } from '../auth.js';
 import { audit, normalizePhone, recalcScore, isoDate, parseEventDateTime, EVENT_TYPES, normEventType, visitTypeOf, registrationTypeOf } from '../util.js';
@@ -11,8 +13,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 
 
 // Временное хранилище загруженных файлов (в памяти процесса)
 const fileCache = new Map();
-function cacheFile(buffer, originalname) {
-  fileCache.set(originalname, { buffer, at: Date.now() });
+function cacheFile(buffer, originalname, userId, filename) {
+  fileCache.set(originalname, { buffer, at: Date.now(), userId, filename });
   if (fileCache.size > 50) {
     const oldest = [...fileCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
     fileCache.delete(oldest[0]);
@@ -39,7 +41,7 @@ const IMPORTABLE_FIELDS = [
 // ---------- Автоопределение колонок ----------
 // Нормализуем заголовок: нижний регистр, ё→е, срезаем приставки «Анкета — ...», лишняя пунктуация
 export function normalizeHeader(h) {
-  let s = String(h ?? '').toLowerCase().replace(/ё/g, 'е');
+  let s = String(h ?? '').replace(/^\uFEFF/, '').replace(/^"|"$/g, '').toLowerCase().replace(/ё/g, 'е');
   s = s.replace(/^анкета\s*[—–\-:]\s*/u, '');
   s = s.replace(/\s+/g, ' ').trim();
   return s;
@@ -52,8 +54,8 @@ const HEADER_RULES = [
   [/^отчество/, 'middle_name'],
   [/^(фио|fio|полное имя|ф\.?\s?и\.?\s?о\.?)$/, 'fio'],
   [/^статус/, '__ticket_status'],          // служебная: статус билета/записи
-  [/^мероприятие$/, '__event_name'],       // служебная: название мероприятия из выгрузки
-  [/^дата и время проведения/, '__event_datetime'],
+  [/^(мероприятие|наименование мероприятия)$/, '__event_name'],       // служебная: название мероприятия из выгрузки
+  [/^дата (и время )?проведения/, '__event_datetime'],
   [/^организатор мероприятия$/, '__event_org'],
   [/^адрес мероприятия$/, '__event_address'],
   [/телефон|мобильн|^номер$|^тел\.?$|^phone/, 'phone'],
@@ -76,6 +78,7 @@ export function guessMapping(headers) {
   headers.forEach((raw, idx) => {
     if (!raw || !String(raw).trim()) return;
     const h = normalizeHeader(raw);
+    if (/^контактн|ответственный|сопровождающ/.test(h)) return;
     for (const [re, field] of HEADER_RULES) {
       if (!re.test(h)) continue;
       if (field.startsWith('__')) {
@@ -91,12 +94,7 @@ export function guessMapping(headers) {
   return { mapping, special };
 }
 
-function parseSheet(buffer) {
-  const wb = xlsx.read(buffer, { type: 'buffer', cellDates: true });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false, dateNF: 'yyyy-mm-dd' });
-  return rows.filter(r => r.some(cell => String(cell).trim() !== ''));
-}
+function parseSheet(buffer) { return readPeopleSheet(buffer).rows; }
 
 function parseFio(fio) {
   const parts = String(fio).trim().split(/\s+/);
@@ -182,8 +180,10 @@ importRouter.post('/preview', requirePerm('import.run'), upload.single('file'), 
   if (detected.kind === 'event_attendance' && detected.summary) suggestedSource = detected.summary;
   else suggestedSource = prettySourceFromFilename(req.file.originalname);
 
-  const fileKey = `${req.user.id}-${Date.now()}-${req.file.originalname}`;
-  cacheFile(req.file.buffer, fileKey);
+  const fileKey = crypto.randomUUID();
+  cacheFile(req.file.buffer, fileKey, req.user.id, req.file.originalname);
+  const sheet = readPeopleSheet(req.file.buffer);
+  if (isCollegeSheet(sheet)) { detected.kind = 'college'; detected.summary = 'Заявки на несколько мероприятий'; }
   if (detected.kind === 'event_attendance') {
     // если имя файла явно про школу/внешнее мероприятие — оно приоритетнее
     const byFile = guessEventType(req.file.originalname);
@@ -192,6 +192,8 @@ importRouter.post('/preview', requirePerm('import.run'), upload.single('file'), 
   res.json({
     fileKey,
     filename: req.file.originalname,
+    sheetName: sheet.name,
+    sheetNames: sheet.sheetNames,
     headers,
     sample,
     totalRows: dataRows.length,
@@ -207,7 +209,8 @@ importRouter.post('/preview', requirePerm('import.run'), upload.single('file'), 
 importRouter.post('/execute', requirePerm('import.run'), (req, res) => {
   const { fileKey, mapping, defaultSource, sourceLabel } = req.body || {};
   const cached = fileCache.get(fileKey);
-  if (!cached) return res.status(400).json({ error: 'Файл не найден — загрузите заново' });
+  if (!cached || cached.userId !== req.user.id || Date.now() - cached.at > 30 * 60 * 1000) return res.status(400).json({ error: 'Файл не найден — загрузите заново' });
+  if (isCollegeSheet(readPeopleSheet(cached.buffer))) return res.status(400).json({ error: 'Используйте импорт людей и мероприятий для формата колледжа' });
   const rows = parseSheet(cached.buffer).slice(1); // без заголовка
   const colMap = Object.entries(mapping || {})
     .map(([idx, field]) => [Number(idx), field])
@@ -218,7 +221,7 @@ importRouter.post('/execute', requirePerm('import.run'), (req, res) => {
 
   const label = String(sourceLabel || defaultSource || '').trim();
   const importInfo = db.prepare('INSERT INTO imports (filename, user_id, total_rows, mapping) VALUES (?,?,?,?)')
-    .run(fileKey.split('-').slice(2).join('-'), req.user.id, rows.length, JSON.stringify({ mapping, sourceLabel: label }));
+    .run(cached.filename, req.user.id, rows.length, JSON.stringify({ mapping, sourceLabel: label }));
   const importId = Number(importInfo.lastInsertRowid);
 
   const statuses = db.prepare('SELECT id FROM statuses ORDER BY sort_order LIMIT 1').get();
@@ -393,6 +396,13 @@ function findCol(headersNorm, re) {
 
 function importAttendance(req, res, dodIdParam) {
   if (!req.file) return res.status(400).json({ error: 'Файл не получен' });
+  try {
+    if (isCollegeSheet(readPeopleSheet(req.file.buffer))) {
+      if (dodIdParam) return res.status(400).json({ error: 'Книга содержит несколько мероприятий. Загрузите её через раздел «Импорт».' });
+      const result = importCollege(req.file.buffer, req.file.originalname, req.user.id, req.body?.eventType);
+      return res.json({ ...result, college: true, event: { name: 'Мероприятия из книги' } });
+    }
+  } catch (e) { return res.status(400).json({ error: e.message }); }
   // Источник таблицы: dod (по умолчанию) | school | external — приходит полем формы
   const wantedType = normEventType(req.body?.eventType);
   let rows;
@@ -486,7 +496,7 @@ function importAttendance(req, res, dodIdParam) {
         // крайний случай: искать по полному ФИО
         const f = parseFio(row[fioIdx]);
         if (f.last && f.first) {
-          contact = db.prepare('SELECT id FROM contacts WHERE lower(last_name)=lower(?) AND lower(first_name)=lower(?) AND (middle_name = "" OR lower(middle_name)=lower(?)) LIMIT 1')
+          contact = db.prepare(`SELECT id FROM contacts WHERE lower(last_name)=lower(?) AND lower(first_name)=lower(?) AND (middle_name = '' OR lower(middle_name)=lower(?)) LIMIT 1`)
             .get(f.last, f.first, f.middle || '');
         }
       }

@@ -12,7 +12,8 @@ if (!fs.existsSync(BACKUPS_DIR)) fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 const TABLES = [
   'roles', 'users', 'statuses', 'programs', 'contacts',
   'contact_programs', 'custom_fields', 'contact_field_values',
-  'dod_events', 'touchpoints', 'tasks', 'task_templates',
+  'dod_events', 'calendar_events', 'touchpoints', 'tasks', 'task_templates',
+  'contact_documents', 'contact_relations', 'messages', 'chat_read_state', 'college_people', 'college_import_rows',
   'scoring_rules', 'settings', 'imports', 'duplicate_candidates', 'audit_log',
 ];
 // sessions намеренно НЕ включаем — не выкидываем пользователей из системы при восстановлении
